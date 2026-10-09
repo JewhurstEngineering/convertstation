@@ -15,7 +15,7 @@ App Sandbox is on. The entitlements are user-selected read/write and app-scoped 
 
 This is still the Homebrew 7.1.1 GPL build on this Mac. Bundling it into a local debug app is not clearance to distribute it.
 
-Direct distribution and notarization are still later. The Mac App Store is still later, and it would need a license review of whatever FFmpeg actually ships.
+Direct distribution is `scripts/release.sh` (Developer ID, notarization, Sparkle). The GPL FFmpeg gate is unchanged. The Mac App Store is still later, and it would need a license review of whatever FFmpeg actually ships.
 
 ## Consequences
 

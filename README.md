@@ -36,3 +36,7 @@ Drop a MOV, pick Balanced (or another preset), choose a folder, and convert. The
 - Animated WebP preview uses Quick Look, because this FFmpeg build cannot decode its own ANIM chunks
 - Jobs that were converting when the app quit come back as Interrupted
 - Files chosen before the sandbox was turned on may need to be picked again
+
+## Releasing
+
+The marketing version and build number live in `project.yml` (`MARKETING_VERSION`, `CURRENT_PROJECT_VERSION`). `./scripts/release.sh Release` signs with Developer ID, notarizes, and writes `artifacts/ConvertStation-<version>.zip` plus `artifacts/appcast.xml`. `/mac-app-prep` tags that version and publishes both files to GitHub. The bundled FFmpeg is still the local Homebrew build and is not cleared for redistribution.
