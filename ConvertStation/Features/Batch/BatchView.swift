@@ -8,6 +8,22 @@ struct BatchView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Text(fileCount)
+                        .font(.headline)
+                    Spacer()
+                    Text("New files use")
+                        .foregroundStyle(.secondary)
+                    SegmentedPills(
+                        options: [PresetID.smallFile, .balanced, .highQuality],
+                        selection: defaultPreset,
+                        title: \.shortTitle
+                    )
+                    .frame(width: 260)
+                    .accessibilityLabel("Preset for new files")
+                }
+                .padding(.bottom, 6)
+
                 BatchColumns {
                     Color.clear.frame(width: 64, height: 1)
                     Text("File").frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
@@ -36,6 +52,16 @@ struct BatchView: View {
             }
         }
         .accessibilityLabel("Conversion queue")
+    }
+
+    private var fileCount: String {
+        let ready = model.convertibleCount
+        let files = model.jobs.count == 1 ? "1 file" : "\(model.jobs.count) files"
+        return ready > 0 ? "\(files) · \(ready) ready" : files
+    }
+
+    private var defaultPreset: Binding<PresetID> {
+        Binding(get: { model.defaultPreset }, set: { model.setDefaultPreset($0) })
     }
 }
 
@@ -207,6 +233,12 @@ private struct BatchRow: View {
     }
 }
 
+private enum BatchEditorLayout {
+    static let previewWidth: CGFloat = 480
+    /// Fixed so a tall clip can't push the row past the window.
+    static let stageHeight: CGFloat = 270
+}
+
 /// The open part of a Batch row.
 private struct BatchEditor: View {
     @Bindable var model: AppModel
@@ -215,17 +247,11 @@ private struct BatchEditor: View {
     var body: some View {
         if job.descriptor?.hasVideo == true {
             PlaybackScope(url: job.sourceURL) { playback in
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 24) {
-                        preview(playback)
-                            .frame(minWidth: 360, maxWidth: .infinity)
-                        side
-                            .frame(width: 340)
-                    }
-                    VStack(alignment: .leading, spacing: 20) {
-                        preview(playback)
-                        side
-                    }
+                HStack(alignment: .top, spacing: 24) {
+                    preview(playback)
+                        .frame(width: BatchEditorLayout.previewWidth)
+                    side
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
             .id(job.id)
@@ -242,14 +268,14 @@ private struct BatchEditor: View {
                 ZStack(alignment: .topLeading) {
                     Brand.stage
                     AnimatedImageView(url: result.outputURL)
-                        .padding(16)
+                        .padding(12)
                     StageBadge(text: "Output")
                 }
-                .aspectRatio(aspect, contentMode: .fit)
+                .frame(height: BatchEditorLayout.stageHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
-                VideoStage(playback: playback, aspect: aspect, badge: nil, cornerRadius: 10, inset: 16)
-                    .aspectRatio(aspect, contentMode: .fit)
+                VideoStage(playback: playback, aspect: aspect, badge: nil, cornerRadius: 10, inset: 12)
+                    .frame(height: BatchEditorLayout.stageHeight)
                 TrimTimeline(model: model, job: job, playback: playback, compact: true)
                     .disabled(job.state.isActive)
             }
