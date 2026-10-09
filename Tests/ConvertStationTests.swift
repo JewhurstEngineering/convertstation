@@ -317,7 +317,7 @@ struct MockAudioProvider: ConversionProvider {
     let task = Task {
         try await runner.run(
             executable: ffmpeg,
-            arguments: ["-hide_banner", "-nostdin", "-f", "lavfi", "-i", "anullsrc=duration=30", "-f", "null", "-"]
+            arguments: ["-hide_banner", "-nostdin", "-re", "-f", "lavfi", "-i", "anullsrc=duration=30", "-f", "null", "-"]
         ) { _ in }
     }
     try await Task.sleep(for: .milliseconds(400))
@@ -409,6 +409,13 @@ struct MockAudioProvider: ConversionProvider {
     #expect(Clock.parse("5.45") == 5.45)
     #expect(Clock.parse("1:02") == 62)
     #expect(Clock.parse("abc") == nil)
+}
+
+@Test func sparkleFeedPointsAtGitHubAppcast() {
+    let url = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+    #expect(url == "https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml")
+    let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
+    #expect(!(key ?? "").isEmpty)
 }
 
 @Test func lighterPresetStepsDown() {
