@@ -213,6 +213,7 @@ enum SizeText {
     /// Next lighter preset to suggest when a file comes out large.
     static func lighterPreset(than preset: PresetID) -> PresetID? {
         switch preset {
+        case .maximum: .highQuality
         case .highQuality, .custom: .balanced
         case .balanced: .smallFile
         case .smallFile: nil

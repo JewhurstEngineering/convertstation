@@ -15,11 +15,11 @@ struct BatchView: View {
                     Text("New files use")
                         .foregroundStyle(.secondary)
                     SegmentedPills(
-                        options: [PresetID.smallFile, .balanced, .highQuality],
+                        options: PresetID.builtIn,
                         selection: defaultPreset,
                         title: \.shortTitle
                     )
-                    .frame(width: 260)
+                    .frame(width: 320)
                     .accessibilityLabel("Preset for new files")
                 }
                 .padding(.bottom, 6)
@@ -167,7 +167,7 @@ private struct BatchRow: View {
     @ViewBuilder
     private var settingsChip: some View {
         if job.descriptor?.hasVideo == true {
-            Text(SizeText.settingsSummary(job.options))
+            Text(model.savedPreset(matching: job.options)?.name ?? SizeText.settingsSummary(job.options))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Brand.fieldFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))

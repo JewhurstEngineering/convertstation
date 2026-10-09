@@ -194,7 +194,8 @@ struct InspectorPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: .infinity)
-        .background(Brand.panel)
+        // Keep the panel colour out of the see-through toolbar above it.
+        .background(Brand.panel, ignoresSafeAreaEdges: [])
         .accessibilityLabel("Inspector")
     }
 }
@@ -209,7 +210,9 @@ struct SettingsForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 14 : 20) {
             if job.descriptor?.hasVideo == true {
-                if !compact {
+                if compact {
+                    PresetPicker(model: model, job: job)
+                } else {
                     presetSection
                 }
                 controls
@@ -238,11 +241,7 @@ struct SettingsForm: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Preset")
                 .font(.headline)
-            SegmentedPills(options: PresetID.allCases, selection: preset, title: \.shortTitle)
-                .accessibilityLabel("Preset")
-            Text(presetCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            PresetPicker(model: model, job: job)
         }
     }
 
@@ -470,16 +469,6 @@ struct SettingsForm: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var presetCaption: String {
-        let options = job.options
-        let width = options.maxPixelWidth.map { "up to \($0.formatted()) px" } ?? "original width"
-        return "\(options.framesPerSecond) fps · \(width) · quality \(options.quality)"
-    }
-
-    private var preset: Binding<PresetID> {
-        Binding(get: { job.options.presetID }, set: { model.applyPreset($0, to: job.id) })
-    }
-
     private var fps: Binding<Int> {
         Binding(
             get: { job.options.framesPerSecond },
@@ -533,7 +522,7 @@ struct ResultSummary: View {
             bars
             advice
             GroupedRows {
-                fact("Used", SizeText.settingsSummary(job.options) + (job.options.presetID == .custom ? "" : " · \(job.options.framesPerSecond) fps · Q\(job.options.quality)"))
+                fact("Used", usedSummary)
                 GroupedRowDivider()
                 fact("Frames", "\(result.frameCount)")
                 GroupedRowDivider()
@@ -553,6 +542,14 @@ struct ResultSummary: View {
     }
 
     private var sourceBytes: Int64? { job.descriptor?.fileSizeBytes }
+
+    private var usedSummary: String {
+        let numbers = "\(job.options.framesPerSecond) fps · Q\(job.options.quality)"
+        if let saved = model.savedPreset(matching: job.options) {
+            return "\(saved.name) · \(numbers)"
+        }
+        return "\(job.options.presetID.shortTitle) · \(numbers)"
+    }
 
     private var change: Double? {
         guard let sourceBytes, sourceBytes > 0 else { return nil }
