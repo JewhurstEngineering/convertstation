@@ -1,6 +1,6 @@
 # ConvertStation
 
-Local-first macOS app that converts a MOV to animated WebP. Files stay on the Mac. This build does not upload anything, and Animated WebP is the only output.
+Local-first macOS app that converts video, images, and audio on this Mac. Files stay on the Mac. This build does not upload anything. The format list only shows outputs the inspected file can actually become.
 
 ## Requirements
 
@@ -26,13 +26,13 @@ xcodebuild -scheme ConvertStation -destination 'platform=macOS' -derivedDataPath
 open build/Build/Products/Debug/ConvertStation.app
 ```
 
-Drop a MOV, pick Balanced (or another preset), choose a folder, and convert. The original file is not modified. Finished WebP files open in Quick Look.
+Drop a file, pick an output, choose a folder, and convert. The original file is not modified. Finished files open in Quick Look.
 
 ## Limits of this build
 
 - Sandboxed and ad-hoc signed, not notarized
 - FFmpeg is copied at build time and is not committed
-- No formats besides MOV (or any file ffprobe can read as video) to animated WebP
+- Outputs are the ones this Mac can encode: animated WebP, GIF, MP4 and MOV (H.264 + AAC), WebM when VP9 and Opus exist, still images through ImageIO, and audio (WAV, AIFF, FLAC, M4A, Opus, MP3) when those encoders are present
 - Animated WebP preview uses Quick Look, because this FFmpeg build cannot decode its own ANIM chunks
 - Jobs that were converting when the app quit come back as Interrupted
 - Files chosen before the sandbox was turned on may need to be picked again
