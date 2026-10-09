@@ -214,6 +214,22 @@ struct WebPOptions: Codable, Equatable, Sendable {
         return self
     }
 
+    /// A custom setup whose numbers land back on a preset is shown as that preset again.
+    func matchingPresetIfPossible() -> WebPOptions {
+        guard presetID == .custom else { return self }
+        for candidate in [PresetID.smallFile, .balanced, .highQuality] {
+            let baseline = WebPOptions.preset(candidate, keepingTrim: self)
+            if framesPerSecond == baseline.framesPerSecond
+                && maxPixelWidth == baseline.maxPixelWidth
+                && quality == baseline.quality {
+                var copy = self
+                copy.presetID = candidate
+                return copy
+            }
+        }
+        return self
+    }
+
     func resolvedFPS(sourceFPS: Double?) -> (fps: Int, clamped: Bool) {
         guard let sourceFPS, sourceFPS > 0 else {
             return (framesPerSecond, false)
