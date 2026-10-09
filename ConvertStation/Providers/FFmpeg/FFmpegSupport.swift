@@ -5,14 +5,16 @@ struct EngineStatus: Equatable, Sendable {
     var ffmpegURL: URL?
     var ffprobeURL: URL?
     var versionSummary: String
-    var supportsAnimatedWebP: Bool
+    var encoders: Set<String>
     var detail: String
+
+    var supportsAnimatedWebP: Bool { encoders.contains("libwebp_anim") }
 
     static let checking = EngineStatus(
         ffmpegURL: nil,
         ffprobeURL: nil,
         versionSummary: "Checking…",
-        supportsAnimatedWebP: false,
+        encoders: [],
         detail: "Checking the conversion engine…"
     )
 
@@ -20,13 +22,17 @@ struct EngineStatus: Equatable, Sendable {
         ffmpegURL: nil,
         ffprobeURL: nil,
         versionSummary: "Not found",
-        supportsAnimatedWebP: false,
+        encoders: [],
         detail: "Install FFmpeg with libwebp, or bundle ffmpeg and ffprobe in the app."
     )
 
     var binaries: EngineBinaries? {
-        guard let ffmpegURL, let ffprobeURL, supportsAnimatedWebP else { return nil }
+        guard let ffmpegURL, let ffprobeURL else { return nil }
         return EngineBinaries(ffmpeg: ffmpegURL, ffprobe: ffprobeURL, versionSummary: versionSummary)
+    }
+
+    func hasEncoder(_ name: String) -> Bool {
+        encoders.contains(name)
     }
 }
 
@@ -48,6 +54,7 @@ enum FFmpegLocator {
         candidates.append(URL(fileURLWithPath: "/usr/local/bin/ffmpeg"))
 
         var lastFailure = "Install FFmpeg with libwebp, or bundle ffmpeg and ffprobe in the app."
+        var fallback: EngineStatus?
         for ffmpeg in candidates where fileManager.isExecutableFile(atPath: ffmpeg.path) {
             let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
             guard fileManager.isExecutableFile(atPath: ffprobe.path) else { continue }
@@ -59,20 +66,43 @@ enum FFmpegLocator {
                 .split(separator: "\n")
                 .first
                 .map(String.init)) ?? "Unknown FFmpeg"
-            if encoders.stdout.contains("libwebp_anim") {
-                return EngineStatus(
-                    ffmpegURL: ffmpeg,
-                    ffprobeURL: ffprobe,
-                    versionSummary: version,
-                    supportsAnimatedWebP: true,
-                    detail: "libwebp_anim is available."
-                )
+            let names = parseEncoders(encoders.stdout)
+            let status = EngineStatus(
+                ffmpegURL: ffmpeg,
+                ffprobeURL: ffprobe,
+                versionSummary: version,
+                encoders: names,
+                detail: names.contains("libwebp_anim")
+                    ? "libwebp_anim is available."
+                    : "This FFmpeg build has no libwebp_anim encoder."
+            )
+            if status.supportsAnimatedWebP {
+                return status
             }
-            lastFailure = "This FFmpeg build has no libwebp_anim encoder."
+            if fallback == nil {
+                fallback = status
+            }
+            lastFailure = status.detail
+        }
+        if let fallback {
+            return fallback
         }
         var missing = EngineStatus.missing
         missing.detail = lastFailure
         return missing
+    }
+
+    /// Encoder names from `ffmpeg -encoders`. Flag columns are six characters, then the name.
+    static func parseEncoders(_ stdout: String) -> Set<String> {
+        var names = Set<String>()
+        for line in stdout.split(separator: "\n") {
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            guard parts.count >= 2 else { continue }
+            let flags = parts[0]
+            guard flags.count == 6, flags.allSatisfy({ "VASFXBDEI.".contains($0) }) else { continue }
+            names.insert(String(parts[1]))
+        }
+        return names
     }
 }
 

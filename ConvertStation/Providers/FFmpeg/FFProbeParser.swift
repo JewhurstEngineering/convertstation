@@ -28,11 +28,22 @@ enum FFProbeParser {
         var warnings: [String] = []
         let alpha = hasAlpha(pixFmt)
         let hdr = transfer == "smpte2084" || transfer == "arib-std-b67" || primaries == "bt2020"
+        let frameCount = video.flatMap { intValue($0["nb_frames"]) }
+        let audioCodec = audios.first?["codec_name"] as? String
+        let kind = mediaKind(
+            codec: codec,
+            formatName: formatName,
+            frameCount: frameCount,
+            hasVideoStream: video != nil,
+            hasAudioStream: !audios.isEmpty
+        )
+        let playsAsVideo = kind == .video || kind == .animation
+
         if alpha {
-            warnings.append("This file has transparency. WebP will keep it when the encoder can.")
+            warnings.append("This file has transparency.")
         }
         if hdr {
-            warnings.append("This file is HDR. WebP will map it to standard color, so it may look different.")
+            warnings.append("This file is HDR. It will be mapped to standard color, so it may look different.")
         }
         if videos.count > 1 {
             warnings.append("Only the first video stream is converted.")
@@ -40,21 +51,58 @@ enum FFProbeParser {
 
         return SourceDescriptor(
             url: fileURL,
-            detectedUTType: typeIdentifier(formatName: formatName, fileURL: fileURL, hasVideo: video != nil),
+            detectedUTType: typeIdentifier(formatName: formatName, fileURL: fileURL, hasVideo: playsAsVideo),
             durationSeconds: duration,
             width: width,
             height: height,
             rotationDegrees: rotation,
-            hasVideo: video != nil,
-            hasAudio: !audios.isEmpty,
+            hasVideo: playsAsVideo,
+            hasAudio: !audios.isEmpty && kind != .still,
             hasAlpha: alpha,
             isHDR: hdr,
             codecName: codec,
             averageFrameRate: fps,
             fileSizeBytes: size,
             formatName: formatName,
-            warnings: warnings
+            warnings: warnings,
+            kind: kind,
+            audioCodecName: audioCodec
         )
+    }
+
+    static func mediaKind(
+        codec: String?,
+        formatName: String?,
+        frameCount: Int?,
+        hasVideoStream: Bool,
+        hasAudioStream: Bool
+    ) -> MediaKind {
+        let format = formatName?.lowercased() ?? ""
+        if format.contains("heif") || format.contains("heic") {
+            return .still
+        }
+        guard hasVideoStream else {
+            return hasAudioStream ? .audio : .still
+        }
+        let name = codec?.lowercased() ?? ""
+        let frames = frameCount ?? 1
+        if name == "gif" || format.contains("gif") {
+            return frames > 1 ? .animation : .still
+        }
+        if name == "webp" || format.contains("webp") {
+            return frames > 1 ? .animation : .still
+        }
+        if name == "apng" {
+            return frames > 1 ? .animation : .still
+        }
+        let stillCodecs: Set<String> = ["png", "mjpeg", "bmp", "tiff", "ppm", "pcx"]
+        if stillCodecs.contains(name), frames <= 1 {
+            return .still
+        }
+        if format.contains("image2"), frames <= 1 {
+            return .still
+        }
+        return .video
     }
 
     static func inspect(url: URL, ffprobe: URL) throws -> SourceDescriptor {
@@ -119,6 +167,13 @@ enum FFProbeParser {
         }
         let rate = numerator / denominator
         return rate > 0 ? rate : nil
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let number = value as? Int { return number }
+        if let string = value as? String { return Int(string) }
+        if let number = value as? NSNumber { return number.intValue }
+        return nil
     }
 
     private static func doubleValue(_ value: Any?) -> Double? {

@@ -6,11 +6,16 @@ struct AnimatedWebPProvider: ConversionProvider {
     var id: String { "ffmpeg-webp" }
 
     func canRead(_ source: SourceDescriptor) -> Bool {
-        source.hasVideo
+        source.hasVideo && (source.kind == .video || source.kind == .animation)
     }
 
     func availableTargets(for source: SourceDescriptor) -> [TargetDescriptor] {
-        canRead(source) ? [.animatedWebP] : []
+        guard canRead(source) else { return [] }
+        var target = TargetDescriptor.animatedWebP
+        if !source.hasAudio {
+            target.lossNotice = "Animated WebP has no sound."
+        }
+        return [target]
     }
 
     func validate(_ request: ConversionRequest, source: SourceDescriptor) throws {
@@ -77,25 +82,15 @@ enum WebPConversion {
         )
         let temporary = staging.appendingPathComponent("\(request.id.uuidString).partial.webp")
         let plan = try provider.makePlan(request, source: source, temporaryOutput: temporary)
-        let started = Date()
-        let progress = ProgressBox()
-
-        do {
-            let output = try await runner.run(executable: plan.executableURL, arguments: plan.arguments) { line in
-                if let fraction = progress.consume(line, expectedDuration: plan.expectedDuration) {
-                    onProgress(fraction)
-                }
-            }
-            if output.cancelled || Task.isCancelled {
-                try? fileManager.removeItem(at: staging)
-                throw ConversionError.cancelled
-            }
-            guard output.exitCode == 0 else {
-                try? fileManager.removeItem(at: staging)
-                throw ConversionError.processFailed(exitCode: output.exitCode, log: output.standardError)
-            }
-            let info = try WebPHeaderParser.parse(file: temporary)
-            let bytes = (try? fileManager.attributesOfItem(atPath: temporary.path)[.size] as? Int64) ?? 0
+        return try await FFmpegSession.run(
+            plan: plan,
+            runner: runner,
+            resolvedDestination: resolvedDestination,
+            replacing: replacing,
+            onProgress: onProgress
+        ) { url in
+            let info = try WebPHeaderParser.parse(file: url)
+            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
             let interval = try options.effectiveInterval(sourceDuration: source.durationSeconds)
             try OutputValidator.validate(
                 info: info,
@@ -104,33 +99,12 @@ enum WebPConversion {
                 source: source,
                 interval: interval
             )
-            try OutputPublisher.publish(temporary: temporary, to: resolvedDestination, replacing: replacing)
-            try? fileManager.removeItem(at: staging)
-            let publishedSize = (try? fileManager.attributesOfItem(atPath: resolvedDestination.path)[.size] as? Int64) ?? bytes
-            return ConversionResult(
-                outputURL: resolvedDestination,
-                bytes: publishedSize,
-                elapsedSeconds: Date().timeIntervalSince(started),
+            return CheckedMedia(
                 width: info.canvasWidth,
                 height: info.canvasHeight,
                 frameCount: info.frameCount,
-                loopForever: info.loopCount == 0,
-                warnings: plan.warnings
+                loopForever: info.loopCount == 0
             )
-        } catch {
-            try? fileManager.removeItem(at: staging)
-            throw error
         }
-    }
-}
-
-private final class ProgressBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var parser = FFmpegProgressParser()
-
-    func consume(_ line: String, expectedDuration: Double) -> Double? {
-        lock.lock()
-        defer { lock.unlock() }
-        return parser.consume(line: line, expectedDuration: expectedDuration)
     }
 }
