@@ -45,6 +45,8 @@ targets:
       properties:
         CFBundleName: ConvertStation
         CFBundleDisplayName: ConvertStation
+        CFBundleIconFile: AppIcon
+        CFBundleIconName: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "14.0"
