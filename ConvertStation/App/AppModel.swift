@@ -38,7 +38,7 @@ final class AppModel {
     private var stopQueue = false
 
     init() {
-        registry = CapabilityRegistry(providers: [])
+        registry = CapabilityRegistry(providers: [StillImageProvider()])
         Task { await self.loadEngine() }
         collisionPolicy = preferences.collisionPolicy
         defaultPreset = preferences.lastPreset
@@ -65,9 +65,39 @@ final class AppModel {
             FFmpegLocator.locate()
         }.value
         engine = located
+        registry = Self.makeRegistry(from: located)
         engineCheckComplete = true
-        if let binaries = located.binaries {
-            registry = CapabilityRegistry(providers: [AnimatedWebPProvider(binaries: binaries)])
+        let retry = jobs.filter { $0.descriptor == nil && ($0.state == .probing || $0.state == .failed) }.map(\.id)
+        for id in retry {
+            await probe(id)
+        }
+    }
+
+    nonisolated static func makeRegistry(from status: EngineStatus) -> CapabilityRegistry {
+        var providers: [any ConversionProvider] = [StillImageProvider()]
+        guard let binaries = status.binaries else {
+            return CapabilityRegistry(providers: providers)
+        }
+        if status.supportsAnimatedWebP {
+            providers.insert(AnimatedWebPProvider(binaries: binaries), at: 0)
+        }
+        providers.append(VideoProfileProvider(binaries: binaries, encoders: status.encoders))
+        providers.append(AudioProfileProvider(binaries: binaries, encoders: status.encoders))
+        return CapabilityRegistry(providers: providers)
+    }
+
+    nonisolated static func preferredProfile(for source: SourceDescriptor, among targets: [TargetDescriptor]) -> String {
+        let ids = Set(targets.map(\.id))
+        switch source.kind {
+        case .video, .animation:
+            if ids.contains(OutputID.animatedWebP) { return OutputID.animatedWebP }
+            return targets.first { $0.family == .animation }?.id ?? targets[0].id
+        case .still:
+            if ids.contains(OutputID.png) { return OutputID.png }
+            return targets.first { $0.family == .image }?.id ?? targets[0].id
+        case .audio:
+            if ids.contains(OutputID.m4aAAC) { return OutputID.m4aAAC }
+            return targets.first { $0.family == .audio }?.id ?? targets[0].id
         }
     }
 
@@ -107,13 +137,24 @@ final class AppModel {
     }
 
     func estimate(for job: ConversionJob) -> OutputEstimate? {
-        guard let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
+        guard job.profileID == OutputID.animatedWebP, let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
         return SizeEstimator.estimate(options: job.options, source: descriptor)
     }
 
     func estimate(for job: ConversionJob, preset: PresetID) -> OutputEstimate? {
-        guard let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
+        guard job.profileID == OutputID.animatedWebP, let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
         return SizeEstimator.estimate(options: WebPOptions.preset(preset, keepingTrim: job.options), source: descriptor)
+    }
+
+    func target(for job: ConversionJob) -> TargetDescriptor? {
+        targets(for: job).first { $0.id == job.profileID }
+    }
+
+    func profileSummary(for job: ConversionJob) -> String {
+        if job.profileID == OutputID.animatedWebP {
+            return savedPreset(matching: job.options)?.name ?? SizeText.settingsSummary(job.options)
+        }
+        return target(for: job)?.displayName ?? "Output"
     }
 
     /// Bytes for the whole queue: finished files count as written, the rest as estimated.
@@ -157,15 +198,20 @@ final class AppModel {
 
     /// Copies output settings to every other file. Each file keeps its own trim.
     func applyOptionsToAll(from id: UUID) {
-        guard let source = jobs.first(where: { $0.id == id })?.options else { return }
+        guard let source = jobs.first(where: { $0.id == id }) else { return }
         for index in jobs.indices where jobs[index].id != id && !jobs[index].state.isActive {
+            guard targets(for: jobs[index]).contains(where: { $0.id == source.profileID }) else { continue }
+            jobs[index].profileID = source.profileID
             var options = jobs[index].options
-            options.presetID = source.presetID
-            options.framesPerSecond = source.framesPerSecond
-            options.maxPixelWidth = source.maxPixelWidth
-            options.quality = source.quality
-            options.loopForever = source.loopForever
+            options.presetID = source.options.presetID
+            options.framesPerSecond = source.options.framesPerSecond
+            options.maxPixelWidth = source.options.maxPixelWidth
+            options.quality = source.options.quality
+            options.loopForever = source.options.loopForever
             jobs[index].options = options
+            jobs[index].stillOptions = source.stillOptions
+            jobs[index].audioOptions = source.audioOptions
+            jobs[index].videoOptions = source.videoOptions
         }
         saveJobs()
     }
@@ -303,9 +349,18 @@ final class AppModel {
         preferences.lastPreset = preset
     }
 
+    func selectProfile(_ id: String, for jobID: UUID? = nil) {
+        let target = jobID ?? selectedJobID
+        guard let target, let index = jobs.firstIndex(where: { $0.id == target }) else { return }
+        guard targets(for: jobs[index]).contains(where: { $0.id == id }) else { return }
+        jobs[index].profileID = id
+        saveJobs()
+    }
+
     func applyPreset(_ preset: PresetID, to id: UUID? = nil) {
         let target = id ?? selectedJobID
         guard let target, let index = jobs.firstIndex(where: { $0.id == target }) else { return }
+        guard jobs[index].profileID == OutputID.animatedWebP else { return }
         jobs[index].options = WebPOptions.preset(preset, keepingTrim: jobs[index].options)
         preferences.lastPreset = preset
         defaultPreset = preset
@@ -318,10 +373,28 @@ final class AppModel {
         change(&jobs[index].options)
         jobs[index].options = jobs[index].options.markingCustomIfNeeded().matchingPresetIfPossible()
         // Tweaking one file shouldn't turn the default for new files into "Custom".
-        if jobs[index].options.presetID != .custom {
+        if jobs[index].profileID == OutputID.animatedWebP, jobs[index].options.presetID != .custom {
             preferences.lastPreset = jobs[index].options.presetID
             defaultPreset = jobs[index].options.presetID
         }
+        saveJobs()
+    }
+
+    func updateStillOptions(for id: UUID, _ change: (inout StillOptions) -> Void) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        change(&jobs[index].stillOptions)
+        saveJobs()
+    }
+
+    func updateAudioOptions(for id: UUID, _ change: (inout AudioOptions) -> Void) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        change(&jobs[index].audioOptions)
+        saveJobs()
+    }
+
+    func updateVideoOptions(for id: UUID, _ change: (inout VideoOptions) -> Void) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        change(&jobs[index].videoOptions)
         saveJobs()
     }
 
@@ -330,7 +403,7 @@ final class AppModel {
             chooseDestination()
         }
         guard destinationURL != nil else { return }
-        guard engine.supportsAnimatedWebP else { return }
+        guard engineCheckComplete else { return }
         stopQueue = false
         runTotal = convertibleCount
         runFinished = 0
@@ -399,49 +472,23 @@ final class AppModel {
             saveJobs()
             return
         }
-        guard let ffprobe = engine.ffprobeURL else {
-            transition(id, to: .failed)
-            setMessage(id, "ffprobe isn't available, so this file can't be inspected.", technical: engine.detail)
-            saveJobs()
-            return
-        }
+        let ffprobe = engine.ffprobeURL
         do {
-            let descriptor = try await Task.detached {
-                try FFProbeParser.inspect(url: url, ffprobe: ffprobe)
-            }.value
+            let descriptor = try await inspect(url: url, ffprobe: ffprobe)
             guard jobs.contains(where: { $0.id == id }) else { return }
+            let available = registry.targets(for: descriptor)
             if let index = jobs.firstIndex(where: { $0.id == id }) {
                 jobs[index].descriptor = descriptor
                 jobs[index].warnings.append(contentsOf: descriptor.warnings.filter { warning in
                     !jobs[index].warnings.contains(warning)
                 })
-                if descriptor.hasAudio {
-                    let note = "Audio will be dropped. Animated WebP has no audio."
-                    if !jobs[index].warnings.contains(note) {
-                        jobs[index].warnings.append(note)
-                    }
-                }
-                if let duration = descriptor.durationSeconds, duration > WebPLimits.longClipSeconds {
-                    let note = "Clips longer than 30 seconds are capped unless you allow the full length."
-                    if !jobs[index].warnings.contains(note) {
-                        jobs[index].warnings.append(note)
-                    }
+                if !available.isEmpty, !available.contains(where: { $0.id == jobs[index].profileID }) {
+                    jobs[index].profileID = Self.preferredProfile(for: descriptor, among: available)
                 }
             }
-            if !descriptor.hasVideo {
+            if available.isEmpty {
                 transition(id, to: .failed)
-                setMessage(
-                    id,
-                    descriptor.hasAudio
-                        ? "This file has audio but no video. Animated WebP needs a video track."
-                        : "No readable video stream was found.",
-                    technical: descriptor.formatName
-                )
-            } else if registry.targets(for: descriptor).isEmpty {
-                transition(id, to: .failed)
-                setMessage(id, engine.supportsAnimatedWebP
-                    ? "Animated WebP isn't available for this file."
-                    : engine.detail, technical: nil)
+                setMessage(id, "No conversion is available for this file.", technical: descriptor.formatName ?? engine.detail)
             } else {
                 transition(id, to: .ready)
                 setMessage(id, nil, technical: nil)
@@ -454,6 +501,25 @@ final class AppModel {
         saveJobs()
     }
 
+    private func inspect(url: URL, ffprobe: URL?) async throws -> SourceDescriptor {
+        if let ffprobe {
+            do {
+                return try await Task.detached {
+                    try FFProbeParser.inspect(url: url, ffprobe: ffprobe)
+                }.value
+            } catch {
+                if let still = StillInspector.inspect(url: url) {
+                    return still
+                }
+                throw error
+            }
+        }
+        if let still = StillInspector.inspect(url: url) {
+            return still
+        }
+        throw ConversionError.engineMissing(engine.detail)
+    }
+
     private func runQueue() async {
         while !Task.isCancelled && !stopQueue {
             guard let id = jobs.first(where: \.canConvert)?.id else { return }
@@ -464,18 +530,27 @@ final class AppModel {
 
     private func convert(_ id: UUID) async {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        guard let descriptor = jobs[index].descriptor, let binaries = engine.binaries, let destination = destinationURL else {
+        guard let descriptor = jobs[index].descriptor, let destination = destinationURL else {
+            return
+        }
+        guard let target = registry.targets(for: descriptor).first(where: { $0.id == jobs[index].profileID }),
+              let provider = registry.provider(for: target) else {
+            fail(id, ConversionError.invalidOptions("That format isn't available for this file."))
             return
         }
         let options = jobs[index].options
+        let stillOptions = jobs[index].stillOptions
+        let audioOptions = jobs[index].audioOptions
+        let videoOptions = jobs[index].videoOptions
         let sourceURL = jobs[index].sourceURL
+        let fileExtension = target.fileExtension
         transition(id, to: .queued)
         guard !stopQueue, !Task.isCancelled else {
             transition(id, to: .cancelled)
             return
         }
 
-        let proposed = OutputPublisher.proposedURL(source: sourceURL, directory: destination)
+        let proposed = OutputPublisher.proposedURL(source: sourceURL, directory: destination, fileExtension: fileExtension)
         let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
         let publishTarget: URL
         let replacing: Bool
@@ -533,19 +608,60 @@ final class AppModel {
                 activeRunner = nil
             }
         }
+        let request = ConversionRequest(
+            id: UUID(),
+            sourceURL: sourceURL,
+            targetFormatID: target.id,
+            options: options,
+            stillOptions: stillOptions,
+            audioOptions: audioOptions,
+            videoOptions: videoOptions,
+            destinationDirectory: destination,
+            collisionPolicy: collisionPolicy
+        )
         do {
-            let result = try await WebPConversion.convert(
-                source: descriptor,
-                options: options,
-                destinationDirectory: destination,
-                collisionPolicy: collisionPolicy,
-                binaries: binaries,
-                runner: runner,
-                resolvedDestination: publishTarget,
-                replacing: replacing
-            ) { fraction in
-                Task { @MainActor in
-                    self.setProgress(id, fraction)
+            let result: ConversionResult
+            if target.providerID == "imageio-still" {
+                result = try await StillImageConversion.convert(
+                    request: request,
+                    source: descriptor,
+                    resolvedDestination: publishTarget,
+                    replacing: replacing
+                )
+            } else if target.id == OutputID.animatedWebP {
+                guard let binaries = engine.binaries else {
+                    throw ConversionError.engineMissing(engine.detail)
+                }
+                result = try await WebPConversion.convert(
+                    source: descriptor,
+                    options: options,
+                    destinationDirectory: destination,
+                    collisionPolicy: collisionPolicy,
+                    binaries: binaries,
+                    runner: runner,
+                    resolvedDestination: publishTarget,
+                    replacing: replacing
+                ) { fraction in
+                    Task { @MainActor in
+                        self.setProgress(id, fraction)
+                    }
+                }
+            } else {
+                guard let binaries = engine.binaries else {
+                    throw ConversionError.engineMissing(engine.detail)
+                }
+                result = try await ProfileConversion.convert(
+                    provider: provider,
+                    request: request,
+                    source: descriptor,
+                    binaries: binaries,
+                    runner: runner,
+                    resolvedDestination: publishTarget,
+                    replacing: replacing
+                ) { fraction in
+                    Task { @MainActor in
+                        self.setProgress(id, fraction)
+                    }
                 }
             }
             guard jobs.contains(where: { $0.id == id }) else { return }
