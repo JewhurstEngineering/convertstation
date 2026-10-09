@@ -10,15 +10,5 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
-	<array>
-		<string>com.apple.coresymbolicationd</string>
-		<string>com.apple.dt.testmanagerd.runner</string>
-		<string>com.apple.testmanagerd</string>
-	</array>
-	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
-	<array>
-		<string>com.apple.dt.testmanagerd.runner</string>
-	</array>
 </dict>
 </plist>

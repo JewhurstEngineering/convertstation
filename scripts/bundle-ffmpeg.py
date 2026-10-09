@@ -252,15 +252,44 @@ def install_dock_icon(app):
     shutil.rmtree(scratch, ignore_errors=True)
 
 
+def signing_identity():
+    expanded = os.environ.get("EXPANDED_CODE_SIGN_IDENTITY", "").strip()
+    named = os.environ.get("CODE_SIGN_IDENTITY", "").strip()
+    identity = expanded or named or "-"
+    if identity == "-":
+        return "-", False
+    hardened = (
+        os.environ.get("ENABLE_HARDENED_RUNTIME", "") == "YES"
+        or os.environ.get("CONFIGURATION") == "Release"
+    )
+    return identity, hardened
+
+
+def codesign(path, identity, hardened, entitlements=None):
+    command = ["codesign", "--force", "--sign", identity]
+    if hardened and identity != "-":
+        command.extend(["--options", "runtime", "--timestamp"])
+    if entitlements is not None:
+        command.extend(["--entitlements", str(entitlements)])
+    command.append(str(path))
+    run(command)
+
+
 def sign(app, helpers, frameworks):
     install_dock_icon(app)
-    entitlements = Path(__file__).resolve().parents[1] / "ConvertStation" / "Helper.entitlements"
+    root = Path(__file__).resolve().parents[1] / "ConvertStation"
+    identity, hardened = signing_identity()
+    helper_entitlements = root / "Helper.entitlements"
+    if os.environ.get("CONFIGURATION") == "Release":
+        app_entitlements = root / "ConvertStation-Release.entitlements"
+    else:
+        app_entitlements = root / "ConvertStation.entitlements"
     for library in frameworks.glob("*.dylib"):
-        run(["codesign", "--force", "--sign", "-", str(library)])
+        codesign(library, identity, hardened)
     for name in ("ffmpeg", "ffprobe"):
         tool = helpers / name
         if tool.exists():
-            run(["codesign", "--force", "--sign", "-", "--entitlements", str(entitlements), str(tool)])
+            codesign(tool, identity, hardened, helper_entitlements)
     plugins = app / "Contents" / "PlugIns"
     if plugins.exists():
         for plugin in plugins.glob("*.xctest"):
@@ -269,9 +298,10 @@ def sign(app, helpers, frameworks):
             if not info.exists() or not binary.exists():
                 shutil.rmtree(plugin, ignore_errors=True)
                 continue
-            run(["codesign", "--force", "--sign", "-", str(plugin)])
-    app_entitlements = Path(__file__).resolve().parents[1] / "ConvertStation" / "ConvertStation.entitlements"
-    run(["codesign", "--force", "--sign", "-", "--entitlements", str(app_entitlements), str(app)])
+            codesign(plugin, identity, hardened)
+    for extra in (app / "Contents" / "MacOS").glob("*.dylib"):
+        codesign(extra, identity, hardened)
+    codesign(app, identity, hardened, app_entitlements)
 
 
 if __name__ == "__main__":
