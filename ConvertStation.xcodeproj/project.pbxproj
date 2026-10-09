@@ -28,6 +28,7 @@
 		A0DAFDB5D4829E96297A277D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 9EEAE9392FA960DD0AA665E3 /* README.md */; };
 		AEED8EB9964B71421459EFC9 /* ConvertStationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0C8A4AB6CBCE0D27BBD98 /* ConvertStationTests.swift */; };
 		B358ED51374A79927CFC3932 /* FrameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD6E9BC6EBDB7CA4013B21E /* FrameStore.swift */; };
+		B5B8D6A0A48C5797E9354034 /* DebugSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F45CD2D642D99C4EA087D86 /* DebugSnapshot.swift */; };
 		C1EA3AC459C097A6B9D5FBD9 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703805C3BD09D7490AD8CD65 /* Components.swift */; };
 		C7E7867EA6387B8A83C7AB9A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55ED504A3E617291FD03C00F /* MainView.swift */; };
 		C8FB9C7110583B8768B7A2EE /* FFmpegCommandBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50360A96C9D9351AC797B930 /* FFmpegCommandBuilder.swift */; };
@@ -50,6 +51,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0F45CD2D642D99C4EA087D86 /* DebugSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSnapshot.swift; sourceTree = "<group>"; };
 		11F3A8A328CBE7EE720F1E17 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		23832D0946F76166C917C57C /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
 		27D50B6F7D9715E482900AF7 /* BatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchView.swift; sourceTree = "<group>"; };
@@ -202,6 +204,7 @@
 		8FE956DB927B92022DEF7AE4 /* Main */ = {
 			isa = PBXGroup;
 			children = (
+				0F45CD2D642D99C4EA087D86 /* DebugSnapshot.swift */,
 				11F3A8A328CBE7EE720F1E17 /* EmptyStateView.swift */,
 				55ED504A3E617291FD03C00F /* MainView.swift */,
 			);
@@ -463,6 +466,7 @@
 				E0FF2F36DD6C13ADFA4D98D9 /* ClipEditor.swift in Sources */,
 				C1EA3AC459C097A6B9D5FBD9 /* Components.swift in Sources */,
 				CE4D4086805D76DB06FECAD2 /* ConvertStationApp.swift in Sources */,
+				B5B8D6A0A48C5797E9354034 /* DebugSnapshot.swift in Sources */,
 				250B9CFFB004B613EA0BB7A8 /* Domain.swift in Sources */,
 				D161930689CB6077B9020D83 /* EmptyStateView.swift in Sources */,
 				4CF6B5718FCEF28FD632CC47 /* FFProbeParser.swift in Sources */,

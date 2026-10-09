@@ -11,16 +11,17 @@ struct MainView: View {
             } else {
                 switch model.layoutMode {
                 case .studio:
+                    // Side columns are fixed so the preview, not the chrome, absorbs window resizes.
                     HStack(spacing: 0) {
                         QueueSidebar(model: model)
-                            .frame(minWidth: 240, idealWidth: 280, maxWidth: 300)
+                            .frame(width: StudioLayout.sidebar)
                         Divider()
                         StudioDetail(model: model)
-                            .frame(minWidth: 420)
-                            .layoutPriority(1)
+                            .frame(minWidth: StudioLayout.detailMinimum, maxWidth: .infinity)
+                            .clipped()
                         Divider()
                         InspectorPanel(model: model)
-                            .frame(minWidth: 280, idealWidth: 320, maxWidth: 340)
+                            .frame(width: StudioLayout.inspector)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .batch:
@@ -40,15 +41,6 @@ struct MainView: View {
                     .accessibilityLabel("ConvertStation")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                if model.layoutMode == .batch, !model.jobs.isEmpty {
-                    Picker("Default preset", selection: defaultPreset) {
-                        ForEach([PresetID.smallFile, .balanced, .highQuality]) { preset in
-                            Text(preset.shortTitle).tag(preset)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .help("Preset for files you add")
-                }
                 Menu {
                     Button {
                     } label: {
@@ -80,6 +72,10 @@ struct MainView: View {
                 .help("Choose files to convert")
             }
         }
+        .toolbarBackground(.visible, for: .windowToolbar)
+        #if DEBUG
+        .onAppear { DebugSnapshot.scheduleIfRequested() }
+        #endif
         .fileImporter(
             isPresented: $model.isChoosingFiles,
             allowedContentTypes: [.item],
@@ -121,10 +117,6 @@ struct MainView: View {
         Binding(get: { model.layoutMode }, set: { model.setLayoutMode($0) })
     }
 
-    private var defaultPreset: Binding<PresetID> {
-        Binding(get: { model.defaultPreset }, set: { model.setDefaultPreset($0) })
-    }
-
     private var collisionPresented: Binding<Bool> {
         Binding(
             get: { model.collisionPrompt != nil },
@@ -161,6 +153,14 @@ struct MainView: View {
             }
         }
     }
+}
+
+enum StudioLayout {
+    static let sidebar: CGFloat = 280
+    static let inspector: CGFloat = 320
+    static let detailMinimum: CGFloat = 480
+    /// Smallest window that fits all three Studio columns.
+    static let windowMinimum: CGFloat = sidebar + inspector + detailMinimum + 2
 }
 
 private struct BottomBar: View {

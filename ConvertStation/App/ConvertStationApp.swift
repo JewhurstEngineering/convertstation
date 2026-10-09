@@ -8,7 +8,7 @@ struct ConvertStationApp: App {
     var body: some Scene {
         WindowGroup {
             MainView(model: model)
-                .frame(minWidth: 960, minHeight: 720)
+                .frame(minWidth: StudioLayout.windowMinimum, minHeight: 720)
                 .onAppear(perform: AppIcon.install)
         }
         .defaultSize(width: 1280, height: 860)
