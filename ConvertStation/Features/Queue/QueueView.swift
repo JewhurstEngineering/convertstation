@@ -1,199 +1,200 @@
 import SwiftUI
 
-struct QueuePane: View {
+/// Studio's left column: every file with a poster frame and its state.
+struct QueueSidebar: View {
     @Bindable var model: AppModel
-    @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("Files")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Queue")
                     .font(.headline)
                 Spacer()
-                Button {
-                    model.isChoosingFiles = true
-                } label: {
-                    Label("Add File", systemImage: "plus")
-                }
-                .labelStyle(.titleAndIcon)
-                .buttonStyle(.bordered)
-                .keyboardShortcut("o", modifiers: .command)
-                .help("Choose files to convert")
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
 
-            Group {
-                if model.jobs.isEmpty {
-                    EmptyQueue(targeted: model.dropTargeted, colorScheme: colorScheme) {
-                        model.isChoosingFiles = true
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(model.jobs) { job in
+                        QueueRow(
+                            job: job,
+                            selected: job.id == model.selectedJobID,
+                            duplicate: model.isDuplicate(job),
+                            select: { model.select(job.id) },
+                            remove: { model.remove(job.id) }
+                        )
                     }
-                } else {
-                    List(selection: $model.selectedJobID) {
-                        ForEach(model.jobs) { job in
-                            QueueRow(job: job, duplicateCount: duplicateCount(job)) {
-                                model.remove(job.id)
-                            }
-                            .tag(job.id)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 10))
-                        }
-                    }
-                    .listStyle(.inset)
-                    .accessibilityLabel("Conversion queue")
                 }
             }
-        }
-        .overlay {
-            if model.dropTargeted {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Brand.magenta, lineWidth: 2)
-                    .padding(8)
-                    .allowsHitTesting(false)
+            .focusable()
+            .focused($focused)
+            .focusEffectDisabled()
+            .onMoveCommand { direction in
+                switch direction {
+                case .up: model.moveSelection(by: -1)
+                case .down: model.moveSelection(by: 1)
+                default: break
+                }
             }
+            .accessibilityLabel("Conversion queue")
+
+            Button {
+                model.isChoosingFiles = true
+            } label: {
+                Text(model.dropTargeted ? "Release to add" : "Drop more videos here")
+                    .font(.caption)
+                    .foregroundStyle(model.dropTargeted ? Brand.blue : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                            .foregroundStyle(model.dropTargeted ? Brand.blue : Brand.hairline)
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Choose files to convert")
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Brand.sidebar)
     }
 
-    private func duplicateCount(_ job: ConversionJob) -> Int {
-        model.jobs.filter { $0.sourceURL.standardizedFileURL.path == job.sourceURL.standardizedFileURL.path }.count
-    }
-}
-
-private struct EmptyQueue: View {
-    var targeted: Bool
-    var colorScheme: ColorScheme
-    var browse: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(colorScheme == .dark ? "WordmarkDark" : "WordmarkLight")
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: 420)
-                .accessibilityLabel("ConvertStation")
-            Text("Drop files to convert")
-                .font(.title2.weight(.semibold))
-            Text("Everything happens on your Mac.")
-                .foregroundStyle(.secondary)
-            Button("Browse Files", action: browse)
-                .buttonStyle(AccentButtonStyle())
+    private var summary: String {
+        let total = model.jobs.count
+        let files = total == 1 ? "1 file" : "\(total) files"
+        if model.isConverting {
+            let done = model.jobs.filter { $0.state == .completed }.count
+            return done > 0 ? "\(done) done · converting" : "converting"
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7, 6]))
-                .foregroundStyle(targeted ? AnyShapeStyle(Brand.accentGradient) : AnyShapeStyle(.secondary.opacity(0.45)))
-                .padding(24)
-        }
+        let ready = model.convertibleCount
+        return ready > 0 ? "\(files) · \(ready) ready" : files
     }
 }
 
 private struct QueueRow: View {
     var job: ConversionJob
-    var duplicateCount: Int
+    var selected: Bool
+    var duplicate: Bool
+    var select: () -> Void
     var remove: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(job.displayName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(metaLine)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                if duplicateCount > 1 || job.isDuplicate {
-                    Text("Duplicate")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Brand.violet.opacity(0.16), in: Capsule())
-                        .foregroundStyle(Brand.violet)
-                        .fixedSize()
-                }
-                status
-                    .fixedSize()
-                Button(role: .destructive) {
-                    remove()
-                } label: {
-                    Image(systemName: "minus.circle")
-                }
-                .buttonStyle(.borderless)
-                .fixedSize()
-                .help("Remove from the queue")
-                .accessibilityLabel("Remove \(job.displayName)")
+        HStack(spacing: 10) {
+            ClipThumbnail(job: job)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(job.result?.outputURL.lastPathComponent ?? job.displayName)
+                    .font(.body.weight(selected ? .semibold : .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                detail
             }
-            if job.state == .running || job.state == .verifying {
-                if let progress = job.progress {
-                    ProgressView(value: progress)
-                        .tint(Brand.magenta)
-                        .accessibilityLabel("Conversion progress")
-                        .accessibilityValue("\(Int(progress * 100)) percent")
-                } else {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .accessibilityLabel("Conversion progress")
-                }
-            }
-            if let message = job.errorMessage, job.state == .failed || job.state == .blockedByPermission || job.state == .cancelled {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(job.state == .failed ? .red : .secondary)
-                    .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            trailing
+        }
+        .padding(8)
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(selected ? Brand.blue.opacity(0.08) : (hovering ? Brand.fieldFill.opacity(0.6) : .clear))
+        }
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Brand.blue, lineWidth: 1.5)
             }
         }
-        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Remove from Queue", role: .destructive, action: remove)
+        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(job.displayName), \(job.state.title)")
+        .accessibilityLabel("\(job.displayName), \(duplicate ? "already in the queue" : job.state.title)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(named: "Remove", remove)
     }
 
     @ViewBuilder
-    private var status: some View {
-        Text(job.state.title)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(statusColor.opacity(0.16), in: Capsule())
-            .foregroundStyle(statusColor)
+    private var detail: some View {
+        if duplicate {
+            Text("Already in the queue")
+                .font(.caption)
+                .foregroundStyle(Brand.warning)
+        } else if job.state == .running || job.state == .verifying {
+            ProgressRow(progress: job.progress)
+        } else if let result = job.result {
+            HStack(spacing: 0) {
+                Text(MediaFormat.bytes(result.bytes))
+                if let change = changeFromSource(result.bytes) {
+                    Text(" · ")
+                    Text(SizeText.change(change))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(SizeText.changeColor(change))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if let message = job.errorMessage, job.state == .failed || job.state == .blockedByPermission {
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(Brand.danger)
+                .lineLimit(2)
+        } else {
+            Text(metaLine)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
-    private var statusColor: Color {
-        switch job.state {
-        case .completed: .green
-        case .failed, .blockedByPermission: .red
-        case .running, .verifying, .queued: Brand.orange
-        case .ready: Brand.blue
-        default: .secondary
+    @ViewBuilder
+    private var trailing: some View {
+        if duplicate || hovering {
+            Button(action: remove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Remove from the queue")
+            .accessibilityLabel("Remove \(job.displayName)")
+        } else if job.state == .completed {
+            Image(systemName: "checkmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Brand.success)
+                .accessibilityHidden(true)
+        } else if job.state != .running && job.state != .verifying && job.state != .failed && job.state != .blockedByPermission {
+            JobStatusView(job: job)
         }
+    }
+
+    private func changeFromSource(_ bytes: Int64) -> Double? {
+        guard let source = job.descriptor?.fileSizeBytes, source > 0 else { return nil }
+        return (Double(bytes) - Double(source)) / Double(source)
     }
 
     private var metaLine: String {
-        var parts: [String] = [job.descriptor?.codecName?.uppercased() ?? typeName]
-        if let bytes = job.descriptor?.fileSizeBytes ?? fileSize {
-            parts.append(MediaFormat.bytes(bytes))
-        }
-        parts.append(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
+        var parts: [String] = []
         if let duration = job.descriptor?.durationSeconds {
             parts.append(MediaFormat.duration(duration))
         }
-        return parts.joined(separator: " · ")
-    }
-
-    private var typeName: String {
-        job.sourceURL.pathExtension.uppercased()
-    }
-
-    private var fileSize: Int64? {
-        guard let value = try? FileManager.default.attributesOfItem(atPath: job.sourceURL.path)[.size] else {
-            return nil
+        if job.descriptor?.displayWidth != nil {
+            parts.append(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
         }
-        return (value as? NSNumber)?.int64Value
+        if let bytes = job.descriptor?.fileSizeBytes {
+            parts.append(MediaFormat.bytes(bytes))
+        }
+        return parts.isEmpty ? job.state.title : parts.joined(separator: " · ")
     }
-
 }

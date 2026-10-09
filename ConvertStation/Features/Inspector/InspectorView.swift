@@ -1,298 +1,491 @@
-import AVKit
 import SwiftUI
 
-struct InspectorView: View {
+/// Studio's middle column: file header, the preview stage, and the trim strip.
+struct StudioDetail: View {
     @Bindable var model: AppModel
 
     var body: some View {
         Group {
             if let job = model.selectedJob {
-                VStack(alignment: .leading, spacing: 12) {
-                    header(job)
-                    if job.descriptor?.hasVideo == true {
-                        SourcePreview(url: job.sourceURL, aspect: pictureAspect(job))
-                            .id(job.id)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    if job.descriptor?.hasAudio == true {
-                        note("Audio will be dropped. Animated WebP is silent.")
-                    }
-                    formatSection(job)
-                    if model.targets(for: job).contains(where: { $0.id == TargetDescriptor.animatedWebP.id }) {
-                        controls(job)
-                    }
-                    if !job.warnings.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Notes")
-                                .font(.headline)
-                            ForEach(job.warnings, id: \.self) { warning in
-                                Text(warning)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    if let result = job.result {
-                        resultSection(job, result)
-                    }
-                    if let message = job.errorMessage {
-                        Text(message)
-                            .font(.callout)
-                            .foregroundStyle(job.state == .failed ? .red : .secondary)
-                    }
-                    if let detail = job.technicalDetail, !detail.isEmpty {
-                        DisclosureGroup("Technical details") {
-                            Text(detail)
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
+                PlaybackScope(url: job.sourceURL) { playback in
+                    StudioCenter(model: model, job: job, playback: playback)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .id(job.id)
             } else {
                 ContentUnavailableView(
                     "No file selected",
                     systemImage: "film",
-                    description: Text("Drop a MOV or choose a file. The inspector shows what can be converted.")
+                    description: Text("Pick a file in the queue to preview and trim it.")
                 )
             }
         }
-        .frame(maxHeight: .infinity)
-        .background(.thinMaterial)
-        .accessibilityLabel("Inspector")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+enum PreviewMode: String, CaseIterable, Identifiable {
+    case source, output, sideBySide
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .source: "Source"
+        case .output: "Output"
+        case .sideBySide: "Side by Side"
+        }
+    }
+}
+
+private struct StudioCenter: View {
+    @Bindable var model: AppModel
+    var job: ConversionJob
+    @ObservedObject var playback: PreviewPlayback
+    @State private var mode: PreviewMode = .output
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header
+            stage
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minHeight: 280)
+            if job.result == nil, job.descriptor?.hasVideo == true {
+                TrimTimeline(model: model, job: job, playback: playback)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Brand.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Brand.hairline, lineWidth: 1)
+                    )
+                    .disabled(job.state.isActive)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
     }
 
-    private func pictureAspect(_ job: ConversionJob) -> CGFloat {
-        let width = CGFloat(job.descriptor?.displayWidth ?? 16)
-        let height = CGFloat(job.descriptor?.displayHeight ?? 9)
-        guard width > 0, height > 0 else { return 16 / 9 }
-        return min(max(width / height, 0.5), 2.4)
-    }
-
-    private func header(_ job: ConversionJob) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(job.displayName)
-                .font(.title3.weight(.semibold))
-                .textSelection(.enabled)
-            Text(metadataLine(job))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private var header: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(job.result?.outputURL.lastPathComponent ?? job.displayName)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Text(metadataLine)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            if job.result != nil {
+                Picker("Preview", selection: $mode) {
+                    ForEach(PreviewMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
         }
     }
 
-    private func metadataLine(_ job: ConversionJob) -> String {
+    @ViewBuilder
+    private var stage: some View {
+        if let result = job.result {
+            switch mode {
+            case .source:
+                VideoStage(playback: playback, aspect: aspect, badge: "Source")
+            case .output:
+                OutputStage(url: result.outputURL, aspect: aspect, badge: "Output · loops")
+            case .sideBySide:
+                HStack(spacing: 12) {
+                    VideoStage(playback: playback, aspect: aspect, badge: "Source", inset: 14)
+                    OutputStage(url: result.outputURL, aspect: aspect, badge: "Output", inset: 14)
+                }
+                .onAppear { if !playback.playing { playback.toggle() } }
+            }
+        } else if job.descriptor?.hasVideo == true {
+            VideoStage(playback: playback, aspect: aspect, badge: "Source")
+        } else {
+            ZStack {
+                Brand.stage
+                if job.state == .probing || job.state == .importing {
+                    ProgressView("Inspecting…")
+                        .foregroundStyle(Color(white: 0.86))
+                } else {
+                    Label("No preview", systemImage: "film")
+                        .foregroundStyle(Color(white: 0.7))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private var aspect: CGFloat {
+        let width = CGFloat(job.descriptor?.displayWidth ?? 16)
+        let height = CGFloat(job.descriptor?.displayHeight ?? 9)
+        guard width > 0, height > 0 else { return 16 / 9 }
+        return min(max(width / height, 0.3), 3)
+    }
+
+    private var metadataLine: String {
+        if let result = job.result {
+            var parts = ["Animated WebP", "\(result.width)×\(result.height)", "\(result.frameCount) frames"]
+            parts.append(result.loopForever ? "loops" : "plays once")
+            return parts.joined(separator: " · ")
+        }
         var parts: [String] = []
         if let codec = job.descriptor?.codecName {
             parts.append(codec.uppercased())
         }
-        parts.append(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
+        if job.descriptor?.displayWidth != nil {
+            parts.append(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
+        }
         if let duration = job.descriptor?.durationSeconds {
             parts.append(MediaFormat.duration(duration))
         }
         if let fps = job.descriptor?.averageFrameRate {
-            parts.append(String(format: "%.2g fps", fps))
+            parts.append("\(Int(fps.rounded())) fps")
         }
-        return parts.joined(separator: "  ·  ")
+        if let bytes = job.descriptor?.fileSizeBytes {
+            parts.append(MediaFormat.bytes(bytes))
+        }
+        return parts.isEmpty ? job.state.title : parts.joined(separator: " · ")
     }
+}
 
-    @ViewBuilder
-    private func formatSection(_ job: ConversionJob) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Output")
-                .font(.headline)
-            let targets = model.targets(for: job)
-            if targets.isEmpty {
-                Text(job.state == .probing ? "Checking this file…" : "Animated WebP isn't available for this file.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(targets) { target in
-                    HStack {
-                        Image(systemName: "play.rectangle.fill")
-                            .foregroundStyle(Brand.orange)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(target.displayName)
-                            Text(target.supportsAudio ? "Includes audio" : "No audio")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Brand.blue)
-                            .accessibilityHidden(true)
+private struct OutputStage: View {
+    var url: URL
+    var aspect: CGFloat
+    var badge: String
+    var inset: CGFloat = 24
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Brand.stage
+            AnimatedImageView(url: url)
+                .aspectRatio(aspect, contentMode: .fit)
+                .padding(inset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            StageBadge(text: badge)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Converted animation preview")
+    }
+}
+
+/// Studio's right column: settings before converting, the result after.
+struct InspectorPanel: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        ScrollView {
+            Group {
+                if let job = model.selectedJob {
+                    if let result = job.result {
+                        ResultSummary(model: model, job: job, result: result)
+                    } else {
+                        SettingsForm(model: model, job: job)
                     }
-                    .padding(10)
-                    .background(Brand.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(target.displayName), available")
+                } else {
+                    Text("Select a file to see its settings.")
+                        .foregroundStyle(.secondary)
                 }
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxHeight: .infinity)
+        .background(Brand.panel)
+        .accessibilityLabel("Inspector")
+    }
+}
+
+/// Preset, encoding controls, estimate and notes for one file.
+/// Used by the Studio inspector and, with `compact`, inside an expanded Batch row.
+struct SettingsForm: View {
+    @Bindable var model: AppModel
+    var job: ConversionJob
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 14 : 20) {
+            if job.descriptor?.hasVideo == true {
+                if !compact {
+                    presetSection
+                }
+                controls
+                if !compact {
+                    estimateCard
+                }
+                largerAdvice
+            }
+            notes
+            if !compact, model.jobs.count > 1, job.descriptor?.hasVideo == true {
+                HStack(spacing: 4) {
+                    Text("Settings apply to this file.")
+                        .foregroundStyle(.secondary)
+                    Button("Apply to all \(model.jobs.count)") { model.applyOptionsToAll(from: job.id) }
+                        .buttonStyle(.link)
+                }
+                .font(.caption)
+            }
+        }
+        .disabled(job.state.isActive)
     }
 
-    private func controls(_ job: ConversionJob) -> some View {
+    private var presetSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Settings")
+            Text("Preset")
                 .font(.headline)
-            Picker("Preset", selection: preset(job)) {
+            Picker("Preset", selection: preset) {
                 ForEach(PresetID.allCases) { preset in
                     Text(preset.shortTitle).tag(preset)
                 }
             }
             .pickerStyle(.segmented)
-            .accessibilityLabel("Preset")
+            .labelsHidden()
+            Text(presetCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 
-            HStack(spacing: 12) {
-                Picker("Frame rate", selection: fps(job)) {
-                    ForEach(WebPLimits.fpsChoices, id: \.self) { fps in
-                        Text("\(fps) fps").tag(fps)
-                    }
+    @ViewBuilder
+    private var controls: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    labeled("Frame rate") { fpsPicker }
+                    labeled("Max width") { widthPicker }
                 }
-                .accessibilityLabel("Frame rate")
-
-                Picker("Max width", selection: width(job)) {
-                    Text("Original").tag(Optional<Int>.none)
-                    ForEach(WebPLimits.widthChoices, id: \.self) { width in
-                        Text("\(width) px").tag(Optional(width))
-                    }
-                }
-                .accessibilityLabel("Maximum width")
+                qualityRow
+                Toggle("Loop forever", isOn: loop)
+                    .toggleStyle(.checkbox)
+                longClipToggle
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Quality")
+        } else {
+            GroupedRows {
+                row {
+                    Text("Frame rate")
                     Spacer()
-                    Text("\(job.options.quality)")
-                        .monospacedDigit()
+                    fpsPicker.fixedSize()
+                }
+                GroupedRowDivider()
+                row {
+                    Text("Max width")
+                    Spacer()
+                    widthPicker.fixedSize()
+                }
+                GroupedRowDivider()
+                qualityRow
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                GroupedRowDivider()
+                row {
+                    Toggle("Loop forever", isOn: loop)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+                if hasLongClip {
+                    GroupedRowDivider()
+                    row { longClipToggle }
+                }
+            }
+        }
+    }
+
+    private var fpsPicker: some View {
+        Picker("Frame rate", selection: fps) {
+            ForEach(WebPLimits.fpsChoices, id: \.self) { fps in
+                Text("\(fps) fps").tag(fps)
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Frame rate")
+    }
+
+    private var widthPicker: some View {
+        Picker("Max width", selection: width) {
+            Text("Original").tag(Optional<Int>.none)
+            ForEach(WebPLimits.widthChoices, id: \.self) { width in
+                Text("\(width.formatted()) px").tag(Optional(width))
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Maximum width")
+    }
+
+    private var qualityRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Quality")
+                Spacer()
+                Text("\(job.options.quality)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: quality, in: 0...100, step: 1)
+                .labelsHidden()
+                .tint(Brand.blue)
+                .accessibilityLabel("Quality")
+        }
+    }
+
+    @ViewBuilder
+    private var longClipToggle: some View {
+        if hasLongClip {
+            Toggle("Convert past 30 seconds", isOn: longClip)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+    }
+
+    private var hasLongClip: Bool {
+        (job.descriptor?.durationSeconds ?? 0) > WebPLimits.longClipSeconds
+    }
+
+    @ViewBuilder
+    private var estimateCard: some View {
+        if let estimate = model.estimate(for: job) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ESTIMATE")
+                    .font(.caption.weight(.semibold))
+                    .tracking(0.4)
+                    .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("≈ \(MediaFormat.bytes(estimate.bytes))")
+                        .font(.title2.weight(.semibold))
+                    if let change = estimate.change(from: job.descriptor?.fileSizeBytes) {
+                        Text(SizeText.change(change))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(SizeText.changeColor(change))
+                    }
+                }
+                Text("\(estimate.frames) frames · \(estimate.width)×\(estimate.height) · \(MediaFormat.duration(estimate.duration))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.canvas, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Estimated size, about \(MediaFormat.bytes(estimate.bytes)), \(estimate.frames) frames")
+        }
+    }
+
+    @ViewBuilder
+    private var largerAdvice: some View {
+        if let estimate = model.estimate(for: job),
+           let change = estimate.change(from: job.descriptor?.fileSizeBytes), change > 0.05 {
+            let lighter = SizeText.lighterPreset(than: job.options.presetID)
+            let lighterBytes = lighter.flatMap { model.estimate(for: job, preset: $0)?.bytes }
+            AdviceBox(
+                title: compact ? nil : "Likely larger than the original",
+                message: compact
+                    ? "Likely larger than the source."
+                    : "\(job.options.framesPerSecond) fps at quality \(job.options.quality) keeps a lot of detail."
+            ) {
+                if let lighter, let lighterBytes {
+                    Button("Use \(lighter.title) (≈ \(MediaFormat.bytes(lighterBytes)))") {
+                        model.applyPreset(lighter, to: job.id)
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var notes: some View {
+        let visible = job.warnings.filter { $0 != "This file is already in the queue." }
+        if !visible.isEmpty || job.errorMessage != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                if !compact {
+                    Text("Notes")
+                        .font(.headline)
+                }
+                ForEach(visible, id: \.self) { warning in
+                    Label(warning, systemImage: "info.circle")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: quality(job), in: 0...100, step: 1)
-                    .labelsHidden()
-                    .accessibilityLabel("Quality")
-                    .tint(Brand.magenta)
-            }
-
-            Toggle("Loop forever", isOn: loop(job))
-                .accessibilityHint("Animated WebP can loop when a player supports it")
-
-            HStack {
-                Text("Start")
-                TextField("Start seconds", value: trimStart(job), format: .number.precision(.fractionLength(0...2)))
-                    .frame(width: 72)
-                Text("End")
-                TextField("End seconds", value: trimEnd(job), format: .number.precision(.fractionLength(0...2)))
-                    .frame(width: 72)
-                Text("sec")
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .contain)
-
-            if let duration = job.descriptor?.durationSeconds, duration > WebPLimits.longClipSeconds {
-                Toggle("Convert past 30 seconds", isOn: longClip(job))
-            }
-
-            if let estimate = frameEstimate(job) {
-                Text(estimate)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let message = job.errorMessage {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(job.state == .failed || job.state == .blockedByPermission ? Brand.danger : .secondary)
+                    if job.state == .blockedByPermission {
+                        Button("Grant Access…") { model.isChoosingFiles = true }
+                    }
+                }
+                if let detail = job.technicalDetail, !detail.isEmpty {
+                    DisclosureGroup("Technical details") {
+                        Text(detail)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.callout)
+                }
             }
         }
     }
 
-    private func resultSection(_ job: ConversionJob, _ result: ConversionResult) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Result")
-                .font(.headline)
-            Text("\(MediaFormat.bytes(result.bytes))  ·  \(result.width)×\(result.height)  ·  \(result.frameCount) frames")
-                .font(.callout)
-            if let sourceBytes = job.descriptor?.fileSizeBytes, sourceBytes > 0 {
-                let delta = (Double(result.bytes) - Double(sourceBytes)) / Double(sourceBytes) * 100
-                Text(String(format: "%@%.0f%% compared with the original", delta > 0 ? "+" : "", delta))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 10) {
-                Button("Quick Look") { model.quickLook(result.outputURL) }
-                Button("Show in Finder") { model.reveal(result.outputURL) }
-                Button("Convert Again") { model.convertAgain(job.id) }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
+    private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack { content() }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 40)
+    }
+
+    private func labeled<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(.callout)
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Brand.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    private var presetCaption: String {
+        let options = job.options
+        let width = options.maxPixelWidth.map { "up to \($0.formatted()) px" } ?? "original width"
+        return "\(options.framesPerSecond) fps · \(width) · quality \(options.quality)"
     }
 
-    private func frameEstimate(_ job: ConversionJob) -> String? {
-        guard let duration = job.descriptor?.durationSeconds else { return nil }
-        guard let interval = try? job.options.effectiveInterval(sourceDuration: duration) else { return nil }
-        let fps = job.options.resolvedFPS(sourceFPS: job.descriptor?.averageFrameRate).fps
-        let frames = max(1, Int((interval.duration * Double(fps)).rounded()))
-        return "About \(frames) frames over \(MediaFormat.duration(interval.duration)). This is an estimate, not the finished file."
+    private var preset: Binding<PresetID> {
+        Binding(get: { job.options.presetID }, set: { model.applyPreset($0, to: job.id) })
     }
 
-    private func preset(_ job: ConversionJob) -> Binding<PresetID> {
-        Binding(
-            get: { job.options.presetID },
-            set: { model.applyPreset($0, to: job.id) }
-        )
-    }
-
-    private func fps(_ job: ConversionJob) -> Binding<Int> {
+    private var fps: Binding<Int> {
         Binding(
             get: { job.options.framesPerSecond },
             set: { value in model.updateOptions(for: job.id) { $0.framesPerSecond = value } }
         )
     }
 
-    private func width(_ job: ConversionJob) -> Binding<Int?> {
+    private var width: Binding<Int?> {
         Binding(
             get: { job.options.maxPixelWidth },
             set: { value in model.updateOptions(for: job.id) { $0.maxPixelWidth = value } }
         )
     }
 
-    private func quality(_ job: ConversionJob) -> Binding<Double> {
+    private var quality: Binding<Double> {
         Binding(
             get: { Double(job.options.quality) },
             set: { value in model.updateOptions(for: job.id) { $0.quality = Int(value.rounded()) } }
         )
     }
 
-    private func loop(_ job: ConversionJob) -> Binding<Bool> {
+    private var loop: Binding<Bool> {
         Binding(
             get: { job.options.loopForever },
             set: { value in model.updateOptions(for: job.id) { $0.loopForever = value } }
         )
     }
 
-    private func trimStart(_ job: ConversionJob) -> Binding<Double> {
-        Binding(
-            get: { job.options.trimStartSeconds },
-            set: { value in model.updateOptions(for: job.id) { $0.trimStartSeconds = max(0, value) } }
-        )
-    }
-
-    private func trimEnd(_ job: ConversionJob) -> Binding<Double> {
-        Binding(
-            get: { job.options.trimEndSeconds ?? job.descriptor?.durationSeconds ?? 0 },
-            set: { value in
-                model.updateOptions(for: job.id) { options in
-                    options.trimEndSeconds = value
-                }
-            }
-        )
-    }
-
-    private func longClip(_ job: ConversionJob) -> Binding<Bool> {
+    private var longClip: Binding<Bool> {
         Binding(
             get: { job.options.allowLongClip },
             set: { value in model.updateOptions(for: job.id) { $0.allowLongClip = value } }
@@ -300,145 +493,120 @@ struct InspectorView: View {
     }
 }
 
-/// The system player chrome is a large floating bar that covers a small preview.
-/// Playback stays in an `AVPlayerView` with no controls, and a short bar sits under the picture.
-private struct SourcePreview: View {
-    var aspect: CGFloat
-    @StateObject private var playback: PreviewPlayback
-
-    init(url: URL, aspect: CGFloat) {
-        self.aspect = aspect
-        _playback = StateObject(wrappedValue: PreviewPlayback(url: url))
-    }
+/// What a finished conversion produced, compared with the source.
+struct ResultSummary: View {
+    @Bindable var model: AppModel
+    var job: ConversionJob
+    var result: ConversionResult
+    var compact = false
 
     var body: some View {
-        VStack(spacing: 6) {
-            PlayerHost(player: playback.player)
-                .aspectRatio(aspect, contentMode: .fit)
-                .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(alignment: .leading, spacing: 18) {
+            if !compact {
+                Label("Converted", systemImage: "checkmark")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Brand.success)
+            }
+            bars
+            advice
+            GroupedRows {
+                fact("Used", SizeText.settingsSummary(job.options) + (job.options.presetID == .custom ? "" : " · \(job.options.framesPerSecond) fps · Q\(job.options.quality)"))
+                GroupedRowDivider()
+                fact("Frames", "\(result.frameCount)")
+                GroupedRowDivider()
+                fact("Saved to", result.outputURL.deletingLastPathComponent().lastPathComponent)
+            }
             HStack(spacing: 8) {
-                Button {
-                    playback.toggle()
-                } label: {
-                    Image(systemName: playback.playing ? "pause.fill" : "play.fill")
-                        .frame(width: 14, height: 14)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(playback.playing ? "Pause" : "Play")
-
-                Text(Self.clock(playback.time))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .leading)
-
-                Slider(
-                    value: Binding(
-                        get: { playback.time },
-                        set: { playback.seek($0) }
-                    ),
-                    in: 0...max(playback.duration, 0.01),
-                    onEditingChanged: { editing in
-                        playback.scrubbing = editing
-                    }
-                )
-                .controlSize(.small)
-                .accessibilityLabel("Playback position")
-
-                Text(Self.clock(playback.duration))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, alignment: .trailing)
+                Button("Quick Look") { model.quickLook(result.outputURL) }
+                    .frame(maxWidth: .infinity)
+                Button("Show in Finder") { model.reveal(result.outputURL) }
+                    .frame(maxWidth: .infinity)
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Source preview")
-        .onDisappear { playback.stop() }
-    }
-
-    private static func clock(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
-@MainActor
-private final class PreviewPlayback: ObservableObject {
-    @Published var playing = false
-    @Published var time = 0.0
-    @Published var duration = 0.0
-    var scrubbing = false
-    let player: AVPlayer
-    private var observer: Any?
-
-    init(url: URL) {
-        let player = AVPlayer(url: url)
-        player.isMuted = true
-        self.player = player
-        observer = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] current in
-            Task { @MainActor in
-                self?.apply(current)
-            }
+            .controlSize(.large)
+            Button("Edit settings and convert again") { model.editAgain(job.id) }
+                .buttonStyle(.link)
+                .frame(maxWidth: .infinity)
         }
     }
 
-    func toggle() {
-        if player.timeControlStatus == .playing {
-            player.pause()
-            playing = false
+    private var sourceBytes: Int64? { job.descriptor?.fileSizeBytes }
+
+    private var change: Double? {
+        guard let sourceBytes, sourceBytes > 0 else { return nil }
+        return (Double(result.bytes) - Double(sourceBytes)) / Double(sourceBytes)
+    }
+
+    @ViewBuilder
+    private var bars: some View {
+        if let sourceBytes {
+            let largest = Double(max(sourceBytes, result.bytes))
+            VStack(spacing: 10) {
+                bar("Original", bytes: sourceBytes, fraction: Double(sourceBytes) / largest, color: .secondary, bold: false)
+                bar("WebP", bytes: result.bytes, fraction: Double(result.bytes) / largest,
+                    color: (change ?? 0) > 0 ? Brand.warning : Brand.success, bold: true)
+            }
+            .accessibilityElement(children: .combine)
         } else {
-            player.play()
-            playing = true
+            Text(MediaFormat.bytes(result.bytes))
+                .font(.title2.weight(.semibold))
         }
     }
 
-    func seek(_ seconds: Double) {
-        let upper = duration > 0 ? duration : seconds
-        let target = min(max(0, seconds), upper)
-        time = target
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-    }
-
-    func stop() {
-        if let observer {
-            player.removeTimeObserver(observer)
-            self.observer = nil
+    private func bar(_ title: String, bytes: Int64, fraction: Double, color: Color, bold: Bool) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(title).foregroundStyle(.secondary)
+                Spacer()
+                Text(MediaFormat.bytes(bytes))
+                    .monospacedDigit()
+                    .fontWeight(bold ? .semibold : .regular)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Brand.fieldFill)
+                    Capsule().fill(color).frame(width: max(8, geometry.size.width * fraction))
+                }
+            }
+            .frame(height: 8)
         }
-        player.pause()
-        playing = false
     }
 
-    private func apply(_ current: CMTime) {
-        if !scrubbing {
-            let seconds = current.seconds
-            time = seconds.isFinite ? max(0, seconds) : 0
+    @ViewBuilder
+    private var advice: some View {
+        if let change, change > 0.05 {
+            let lighter = SizeText.lighterPreset(than: job.options.presetID)
+            let lighterBytes = lighter.flatMap { model.estimate(for: job, preset: $0)?.bytes }
+            AdviceBox(
+                title: "\(SizeText.change(change).dropFirst())% larger than the original",
+                message: reason(lighter: lighter, lighterBytes: lighterBytes)
+            ) {
+                if let lighter {
+                    Button("Redo with \(lighter.title)") { model.redo(job.id, with: lighter) }
+                        .disabled(model.isConverting)
+                }
+            }
+        } else if let change, change < -0.05 {
+            Text("\(SizeText.change(change).dropFirst())% smaller than the original")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Brand.success)
         }
-        let length = player.currentItem?.duration.seconds ?? 0
-        duration = length.isFinite ? max(0, length) : 0
-        playing = player.timeControlStatus == .playing
-    }
-}
-
-private struct PlayerHost: NSViewRepresentable {
-    var player: AVPlayer?
-
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .none
-        view.videoGravity = .resizeAspect
-        view.player = player
-        return view
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {
-        view.controlsStyle = .none
-        if view.player !== player {
-            view.player = player
+    private func reason(lighter: PresetID?, lighterBytes: Int64?) -> String {
+        let cause = "\(job.options.framesPerSecond) fps at quality \(job.options.quality) keeps nearly every frame."
+        guard let lighter, let lighterBytes else {
+            return cause + " Try a lower quality or a shorter trim."
         }
+        return cause + " \(lighter.title) should land near \(MediaFormat.bytes(lighterBytes))."
+    }
+
+    private func fact(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }
