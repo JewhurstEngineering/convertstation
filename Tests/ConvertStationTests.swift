@@ -1,6 +1,9 @@
+import CoreGraphics
 import CryptoKit
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import ConvertStation
 
 final class FixtureAnchor: NSObject {}
@@ -420,8 +423,342 @@ struct MockAudioProvider: ConversionProvider {
 @Test func sparkleFeedPointsAtGitHubAppcast() {
     let url = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
     #expect(url == "https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml")
+    #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconName") as? String == "AppIcon")
     let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
     #expect(!(key ?? "").isEmpty)
+}
+
+@Test func silentVideoHidesAudioTargets() {
+    let registry = profileRegistry()
+    let silent = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie", kind: .video)
+    let ids = Set(registry.targets(for: silent).map(\.id))
+    #expect(ids.contains(OutputID.animatedWebP))
+    #expect(ids.contains(OutputID.mp4))
+    #expect(ids.contains(OutputID.gifAnimated))
+    #expect(ids.contains(OutputID.jpeg))
+    #expect(!ids.contains(OutputID.wav))
+    #expect(!ids.contains(OutputID.mp3))
+    #expect(!ids.contains(OutputID.m4aAAC))
+}
+
+@Test func stillImageHidesAnimationAndAudio() {
+    let registry = profileRegistry()
+    let jpeg = sampleSource(hasVideo: false, hasAudio: false, type: UTType.jpeg.identifier, kind: .still)
+    let ids = Set(registry.targets(for: jpeg).map(\.id))
+    #expect(ids.contains(OutputID.jpeg))
+    #expect(ids.contains(OutputID.png))
+    #expect(!ids.contains(OutputID.animatedWebP))
+    #expect(!ids.contains(OutputID.gifAnimated))
+    #expect(!ids.contains(OutputID.mp4))
+    #expect(registry.targets(for: jpeg).allSatisfy { $0.family == .image })
+}
+
+@Test func audioFileHidesGif() {
+    let registry = profileRegistry()
+    let audio = sampleSource(hasVideo: false, hasAudio: true, type: UTType.wav.identifier, kind: .audio)
+    let ids = Set(registry.targets(for: audio).map(\.id))
+    #expect(ids.contains(OutputID.wav))
+    #expect(ids.contains(OutputID.flac))
+    #expect(ids.contains(OutputID.mp3))
+    #expect(!ids.contains(OutputID.gifAnimated))
+    #expect(!ids.contains(OutputID.animatedWebP))
+    #expect(!ids.contains(OutputID.jpeg))
+}
+
+@Test func missingEncoderHidesThatProfile() {
+    let binaries = testBinaries()
+    let registry = CapabilityRegistry(providers: [
+        VideoProfileProvider(binaries: binaries, encoders: ["gif", "h264_videotoolbox"]),
+        AudioProfileProvider(binaries: binaries, encoders: ["pcm_s16le"])
+    ])
+    let silent = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie", kind: .video)
+    let ids = Set(registry.targets(for: silent).map(\.id))
+    #expect(ids == [OutputID.gifAnimated])
+}
+
+@Test func encoderListReadsFFmpegColumns() {
+    let text = """
+     Encoders:
+     V..... libx264              H.264
+     A....D aac                  AAC
+    """
+    let names = FFmpegLocator.parseEncoders(text)
+    #expect(names.contains("libx264"))
+    #expect(names.contains("aac"))
+    #expect(!names.contains("Encoders:"))
+}
+
+@Test func probeTreatsASingleJPEGAsAStill() throws {
+    let json = """
+    {
+      "streams": [
+        { "codec_type": "video", "codec_name": "mjpeg", "width": 32, "height": 16, "nb_frames": "1", "pix_fmt": "yuvj420p" }
+      ],
+      "format": { "format_name": "image2", "duration": "0.04", "size": "400" }
+    }
+    """.data(using: .utf8)!
+    let source = try FFProbeParser.parse(json: json, fileURL: URL(fileURLWithPath: "/tmp/photo.jpg"))
+    #expect(source.kind == .still)
+    #expect(!source.hasVideo)
+    #expect(!profileRegistry().targets(for: source).contains { $0.id == OutputID.animatedWebP })
+}
+
+@Test func probeTreatsASilentClipAsVideo() throws {
+    let json = """
+    {
+      "streams": [
+        { "codec_type": "video", "codec_name": "h264", "width": 64, "height": 36, "nb_frames": "30", "avg_frame_rate": "30/1" }
+      ],
+      "format": { "format_name": "mov,mp4,m4a", "duration": "1.0", "size": "2000" }
+    }
+    """.data(using: .utf8)!
+    let source = try FFProbeParser.parse(json: json, fileURL: URL(fileURLWithPath: "/tmp/silent.mov"))
+    #expect(source.kind == .video)
+    #expect(!source.hasAudio)
+    let ids = Set(profileRegistry().targets(for: source).map(\.id))
+    #expect(!ids.contains(OutputID.wav))
+}
+
+@Test func outputNameUsesTheProfileExtension() {
+    let source = URL(fileURLWithPath: "/tmp/clips/phone.mov")
+    #expect(OutputPublisher.fileName(for: source, extension: "mp4") == "phone.mp4")
+    #expect(OutputPublisher.fileName(for: source, extension: ".WAV") == "phone.wav")
+    #expect(!OutputPublisher.fileName(for: source, extension: "../png").contains("/"))
+}
+
+@Test func oldJobWithoutAProfileStillOpensAsWebP() throws {
+    let job = ConversionJob.new(url: URL(fileURLWithPath: "/tmp/clip.mov"), duplicate: false)
+    let data = try JSONEncoder().encode(job)
+    var object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    object.removeValue(forKey: "profileID")
+    object.removeValue(forKey: "stillOptions")
+    let legacy = try JSONSerialization.data(withJSONObject: object)
+    let decoded = try JSONDecoder().decode(ConversionJob.self, from: legacy)
+    #expect(decoded.profileID == OutputID.animatedWebP)
+    #expect(decoded.stillOptions == .standard)
+}
+
+@Test func jpegBecomesPNGAndLeavesTheSourceAlone() async throws {
+    let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent("convertstation-src-\(UUID().uuidString).jpg")
+    let image = try makeJPEG(width: 16, height: 8)
+    try image.write(to: sourceURL)
+    defer { try? FileManager.default.removeItem(at: sourceURL) }
+    let before = try Data(contentsOf: sourceURL)
+    let descriptor = try #require(StillInspector.inspect(url: sourceURL))
+    #expect(descriptor.kind == .still)
+    let destination = FileManager.default.temporaryDirectory.appendingPathComponent("convertstation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: destination) }
+    let output = destination.appendingPathComponent("photo.png")
+    let request = ConversionRequest(
+        id: UUID(),
+        sourceURL: sourceURL,
+        targetFormatID: OutputID.png,
+        options: .balanced,
+        destinationDirectory: destination,
+        collisionPolicy: .ask
+    )
+    let result = try await StillImageConversion.convert(
+        request: request,
+        source: descriptor,
+        resolvedDestination: output,
+        replacing: false
+    )
+    #expect(result.width == 16)
+    #expect(result.height == 8)
+    #expect(try Data(contentsOf: sourceURL) == before)
+    let reopened = CGImageSourceCreateWithURL(result.outputURL as CFURL, nil)
+    #expect(CGImageSourceGetType(reopened!) as String? == UTType.png.identifier)
+}
+
+@Test func fixtureFilesOnlyOfferMatchingTargets() throws {
+    let status = FFmpegLocator.locate()
+    let binaries = try #require(status.binaries)
+    let registry = AppModel.makeRegistry(from: status)
+
+    let silent = try FFProbeParser.inspect(url: Fixtures.url("silent.mov"), ffprobe: binaries.ffprobe)
+    let silentIDs = Set(registry.targets(for: silent).map(\.id))
+    #expect(silent.kind == .video)
+    #expect(!silent.hasAudio)
+    #expect(!silentIDs.contains(OutputID.wav))
+    #expect(!silentIDs.contains(OutputID.mp3))
+
+    let tone = try FFProbeParser.inspect(url: Fixtures.url("tone.wav"), ffprobe: binaries.ffprobe)
+    let toneIDs = Set(registry.targets(for: tone).map(\.id))
+    #expect(tone.kind == .audio)
+    #expect(!toneIDs.contains(OutputID.gifAnimated))
+    #expect(!toneIDs.contains(OutputID.animatedWebP))
+    #expect(toneIDs.contains(OutputID.wav))
+
+    let jpeg = try FFProbeParser.inspect(url: Fixtures.url("sample.jpg"), ffprobe: binaries.ffprobe)
+    let jpegIDs = Set(registry.targets(for: jpeg).map(\.id))
+    #expect(jpeg.kind == .still)
+    #expect(!jpegIDs.contains(OutputID.animatedWebP))
+    #expect(!jpegIDs.contains(OutputID.gifAnimated))
+    #expect(jpegIDs.contains(OutputID.png))
+}
+
+@Test func audioAndStillProfilesMatchTheirContainers() async throws {
+    let status = FFmpegLocator.locate()
+    let binaries = try #require(status.binaries)
+    let registry = AppModel.makeRegistry(from: status)
+    let destination = FileManager.default.temporaryDirectory.appendingPathComponent("convertstation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: destination) }
+    let runner = ProcessRunner()
+
+    let tone = try FFProbeParser.inspect(url: Fixtures.url("tone.wav"), ffprobe: binaries.ffprobe)
+    for target in registry.targets(for: tone) where target.family == .audio {
+        let output = try await convertProfile(target.id, source: tone, binaries: binaries, runner: runner, destination: destination)
+        let facts = try OutputChecker.inspect(url: output, ffprobe: binaries.ffprobe)
+        let expected = try #require(AudioProfileProvider.expect(for: target.id))
+        #expect(facts.audioCodec == expected.codec)
+        #expect(facts.formatName.contains(expected.format))
+        #expect(facts.videoCodec == nil)
+    }
+
+    let jpeg = try FFProbeParser.inspect(url: Fixtures.url("sample.jpg"), ffprobe: binaries.ffprobe)
+    for target in registry.targets(for: jpeg) where target.family == .image {
+        let output = destination.appendingPathComponent("still-\(target.id.replacingOccurrences(of: ".", with: "-")).\(target.fileExtension)")
+        let request = ConversionRequest(
+            id: UUID(),
+            sourceURL: jpeg.url,
+            targetFormatID: target.id,
+            options: .balanced,
+            destinationDirectory: destination,
+            collisionPolicy: .ask
+        )
+        let result = try await StillImageConversion.convert(
+            request: request,
+            source: jpeg,
+            resolvedDestination: output,
+            replacing: false
+        )
+        #expect(result.width == 16)
+        #expect(result.height == 8)
+        #expect(result.bytes > 0)
+    }
+}
+
+@Test func baselineConvertsToTheNewProfiles() async throws {
+    let status = FFmpegLocator.locate()
+    let binaries = try #require(status.binaries)
+    let sourceURL = Fixtures.url("baseline.mov")
+    let before = try Data(contentsOf: sourceURL)
+    let source = try FFProbeParser.inspect(url: sourceURL, ffprobe: binaries.ffprobe)
+    let registry = AppModel.makeRegistry(from: status)
+    let ids = Set(registry.targets(for: source).map(\.id))
+    #expect(ids.contains(OutputID.mp4))
+    #expect(ids.contains(OutputID.gifAnimated))
+    #expect(ids.contains(OutputID.wav))
+    #expect(!profileRegistry().targets(for: sampleSource(hasVideo: false, hasAudio: true, type: "public.audio", kind: .audio)).contains { $0.id == OutputID.gifAnimated })
+
+    let destination = FileManager.default.temporaryDirectory.appendingPathComponent("convertstation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: destination) }
+    let runner = ProcessRunner()
+
+    let mp4 = try await convertProfile(OutputID.mp4, source: source, binaries: binaries, runner: runner, destination: destination)
+    let mp4Facts = try OutputChecker.inspect(url: mp4, ffprobe: binaries.ffprobe)
+    #expect(mp4Facts.videoCodec == "h264")
+    #expect(mp4Facts.audioCodec == "aac")
+    #expect(mp4Facts.majorBrand != "qt")
+
+    let mov = try await convertProfile(OutputID.mov, source: source, binaries: binaries, runner: runner, destination: destination)
+    let movFacts = try OutputChecker.inspect(url: mov, ffprobe: binaries.ffprobe)
+    #expect(movFacts.videoCodec == "h264")
+    #expect(movFacts.audioCodec == "aac")
+    #expect(movFacts.majorBrand == "qt")
+
+    let frame = destination.appendingPathComponent("frame.png")
+    let frameRequest = ConversionRequest(
+        id: UUID(),
+        sourceURL: source.url,
+        targetFormatID: OutputID.png,
+        options: .balanced,
+        destinationDirectory: destination,
+        collisionPolicy: .ask
+    )
+    let frameResult = try await StillImageConversion.convert(
+        request: frameRequest,
+        source: source,
+        resolvedDestination: frame,
+        replacing: false
+    )
+    #expect(frameResult.width == 640)
+    #expect(frameResult.height == 360)
+
+    let gif = try await convertProfile(OutputID.gifAnimated, source: source, binaries: binaries, runner: runner, destination: destination)
+    let gifFacts = try OutputChecker.inspect(url: gif, ffprobe: binaries.ffprobe)
+    #expect(gifFacts.videoCodec == "gif")
+    #expect(gifFacts.audioCodec == nil)
+
+    let wav = try await convertProfile(OutputID.wav, source: source, binaries: binaries, runner: runner, destination: destination)
+    let wavFacts = try OutputChecker.inspect(url: wav, ffprobe: binaries.ffprobe)
+    #expect(wavFacts.audioCodec == "pcm_s16le")
+    #expect(wavFacts.videoCodec == nil)
+    #expect(try Data(contentsOf: sourceURL) == before)
+
+    if status.encoders.contains("libvpx-vp9"), status.encoders.contains("libopus") {
+        let webm = try await convertProfile(OutputID.webm, source: source, binaries: binaries, runner: runner, destination: destination)
+        let facts = try OutputChecker.inspect(url: webm, ffprobe: binaries.ffprobe)
+        #expect(facts.videoCodec == "vp9")
+        #expect(facts.audioCodec == "opus")
+    }
+}
+
+private func convertProfile(
+    _ id: String,
+    source: SourceDescriptor,
+    binaries: EngineBinaries,
+    runner: ProcessRunner,
+    destination: URL
+) async throws -> URL {
+    let registry = AppModel.makeRegistry(from: FFmpegLocator.locate())
+    let target = try #require(registry.targets(for: source).first { $0.id == id })
+    let provider = try #require(registry.provider(for: target))
+    let output = destination.appendingPathComponent("out-\(id.replacingOccurrences(of: ".", with: "-")).\(target.fileExtension)")
+    let request = ConversionRequest(
+        id: UUID(),
+        sourceURL: source.url,
+        targetFormatID: id,
+        options: .preset(.smallFile),
+        destinationDirectory: destination,
+        collisionPolicy: .ask
+    )
+    _ = try await ProfileConversion.convert(
+        provider: provider,
+        request: request,
+        source: source,
+        binaries: binaries,
+        runner: runner,
+        resolvedDestination: output,
+        replacing: false
+    ) { _ in }
+    return output
+}
+
+private func makeJPEG(width: Int, height: Int) throws -> Data {
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ), let image = context.makeImage() else {
+        throw ConversionError.unreadable("Could not draw a test image.")
+    }
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
+        throw ConversionError.unreadable("Could not start a JPEG.")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw ConversionError.unreadable("Could not finish a JPEG.")
+    }
+    return data as Data
 }
 
 @Test func lighterPresetStepsDown() {
@@ -432,8 +769,9 @@ struct MockAudioProvider: ConversionProvider {
     #expect(SizeText.change(-0.55) == "\u{2212}55%")
 }
 
-private func sampleSource(hasVideo: Bool, hasAudio: Bool, type: String) -> SourceDescriptor {
-    SourceDescriptor(
+private func sampleSource(hasVideo: Bool, hasAudio: Bool, type: String, kind: MediaKind? = nil) -> SourceDescriptor {
+    let resolved: MediaKind = kind ?? (hasVideo ? .video : (hasAudio ? .audio : .still))
+    return SourceDescriptor(
         url: URL(fileURLWithPath: "/tmp/sample.mov"),
         detectedUTType: type,
         durationSeconds: 2,
@@ -448,6 +786,39 @@ private func sampleSource(hasVideo: Bool, hasAudio: Bool, type: String) -> Sourc
         averageFrameRate: 30,
         fileSizeBytes: 1000,
         formatName: "mov",
-        warnings: []
+        warnings: [],
+        kind: resolved,
+        audioCodecName: hasAudio ? "aac" : nil
     )
+}
+
+private func testBinaries() -> EngineBinaries {
+    EngineBinaries(
+        ffmpeg: URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg"),
+        ffprobe: URL(fileURLWithPath: "/opt/homebrew/bin/ffprobe"),
+        versionSummary: "test"
+    )
+}
+
+private func fullEncoders() -> Set<String> {
+    ["libwebp_anim", "h264_videotoolbox", "aac", "libvpx-vp9", "libopus", "gif", "flac", "alac", "libmp3lame", "pcm_s16le", "pcm_s16be"]
+}
+
+private func profileRegistry(writable: Set<String> = [
+    UTType.jpeg.identifier,
+    UTType.png.identifier,
+    UTType.webP.identifier,
+    UTType.tiff.identifier,
+    UTType.bmp.identifier,
+    UTType.heic.identifier,
+    UTType.gif.identifier
+]) -> CapabilityRegistry {
+    let binaries = testBinaries()
+    let encoders = fullEncoders()
+    return CapabilityRegistry(providers: [
+        AnimatedWebPProvider(binaries: binaries),
+        VideoProfileProvider(binaries: binaries, encoders: encoders),
+        StillImageProvider(writable: writable),
+        AudioProfileProvider(binaries: binaries, encoders: encoders)
+    ])
 }
