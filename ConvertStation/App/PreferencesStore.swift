@@ -6,6 +6,7 @@ final class PreferencesStore {
     private let policyKey = "collisionPolicy"
     private let bookmarkKey = "destinationBookmark"
     private let presetKey = "lastPreset"
+    private let layoutKey = "layoutMode"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -26,6 +27,11 @@ final class PreferencesStore {
     var lastPreset: PresetID {
         get { defaults.string(forKey: presetKey).flatMap(PresetID.init(rawValue:)) ?? .balanced }
         set { defaults.set(newValue.rawValue, forKey: presetKey) }
+    }
+
+    var layoutMode: LayoutMode {
+        get { defaults.string(forKey: layoutKey).flatMap(LayoutMode.init(rawValue:)) ?? .studio }
+        set { defaults.set(newValue.rawValue, forKey: layoutKey) }
     }
 }
 

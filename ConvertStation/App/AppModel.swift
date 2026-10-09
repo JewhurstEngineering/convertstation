@@ -16,12 +16,17 @@ final class AppModel {
     var selectedJobID: UUID?
     var destinationURL: URL?
     var collisionPolicy: CollisionPolicy = .ask
+    var defaultPreset: PresetID = .balanced
     var engine: EngineStatus = .checking
     var engineCheckComplete = false
     var isChoosingFiles = false
     var dropTargeted = false
     var collisionPrompt: CollisionPrompt?
     var quickLook = QuickLookPresenter()
+    var layoutMode: LayoutMode = .studio
+    /// Size of the current run and how many of its files have finished, for "Converting 1 of 2".
+    private(set) var runTotal = 0
+    private(set) var runFinished = 0
 
     private let fileAccess = FileAccessManager()
     private let preferences = PreferencesStore()
@@ -35,6 +40,8 @@ final class AppModel {
         registry = CapabilityRegistry(providers: [])
         Task { await self.loadEngine() }
         collisionPolicy = preferences.collisionPolicy
+        defaultPreset = preferences.lastPreset
+        layoutMode = preferences.layoutMode
         if let data = preferences.destinationBookmark, let url = try? fileAccess.resolveBookmark(data) {
             destinationURL = url
             fileAccess.beginAccess(url)
@@ -81,11 +88,116 @@ final class AppModel {
         jobs.filter(\.canConvert).count
     }
 
+    var isConverting: Bool {
+        jobs.contains { $0.state.isActive }
+    }
+
+    var progressTitle: String {
+        guard runTotal > 1 else { return "Converting…" }
+        return "Converting \(min(runFinished + 1, runTotal)) of \(runTotal)…"
+    }
+
+    func estimate(for job: ConversionJob) -> OutputEstimate? {
+        guard let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
+        return SizeEstimator.estimate(options: job.options, source: descriptor)
+    }
+
+    func estimate(for job: ConversionJob, preset: PresetID) -> OutputEstimate? {
+        guard let descriptor = job.descriptor, descriptor.hasVideo else { return nil }
+        return SizeEstimator.estimate(options: WebPOptions.preset(preset, keepingTrim: job.options), source: descriptor)
+    }
+
+    /// Bytes for the whole queue: finished files count as written, the rest as estimated.
+    var queueTotals: (source: Int64, output: Int64)? {
+        var source: Int64 = 0
+        var output: Int64 = 0
+        for job in jobs {
+            guard let sourceBytes = job.descriptor?.fileSizeBytes else { continue }
+            if let result = job.result {
+                source += sourceBytes
+                output += result.bytes
+            } else if let estimate = estimate(for: job) {
+                source += sourceBytes
+                output += estimate.bytes
+            }
+        }
+        return source > 0 ? (source, output) : nil
+    }
+
+    func isDuplicate(_ job: ConversionJob) -> Bool {
+        let path = job.sourceURL.standardizedFileURL.path
+        guard let first = jobs.first(where: { $0.sourceURL.standardizedFileURL.path == path }) else { return false }
+        return first.id != job.id
+    }
+
+    func setLayoutMode(_ mode: LayoutMode) {
+        layoutMode = mode
+        preferences.layoutMode = mode
+    }
+
+    func select(_ id: UUID?) {
+        selectedJobID = id
+    }
+
+    func moveSelection(by offset: Int) {
+        guard !jobs.isEmpty else { return }
+        let current = jobs.firstIndex { $0.id == selectedJobID } ?? (offset > 0 ? -1 : jobs.count)
+        let next = min(max(current + offset, 0), jobs.count - 1)
+        selectedJobID = jobs[next].id
+    }
+
+    /// Copies output settings to every other file. Each file keeps its own trim.
+    func applyOptionsToAll(from id: UUID) {
+        guard let source = jobs.first(where: { $0.id == id })?.options else { return }
+        for index in jobs.indices where jobs[index].id != id && !jobs[index].state.isActive {
+            var options = jobs[index].options
+            options.presetID = source.presetID
+            options.framesPerSecond = source.framesPerSecond
+            options.maxPixelWidth = source.maxPixelWidth
+            options.quality = source.quality
+            options.loopForever = source.loopForever
+            jobs[index].options = options
+        }
+        saveJobs()
+    }
+
+    func resetToDefault(_ id: UUID) {
+        applyPreset(defaultPreset == .custom ? .balanced : defaultPreset, to: id)
+    }
+
+    /// Puts a finished file back into editing. The output already written stays on disk.
+    func editAgain(_ id: UUID) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[index].result = nil
+        jobs[index].progress = nil
+        jobs[index].errorMessage = nil
+        transition(id, to: .ready)
+        saveJobs()
+    }
+
+    func redo(_ id: UUID, with preset: PresetID) {
+        applyPreset(preset, to: id)
+        convertAgain(id)
+    }
+
     func importURLs(_ urls: [URL]) {
         let preset = preferences.lastPreset
         for url in urls {
             fileAccess.beginAccess(url)
             let path = url.standardizedFileURL.path
+            if let index = jobs.firstIndex(where: {
+                $0.state == .blockedByPermission && $0.sourceURL.standardizedFileURL.path == path
+            }) {
+                // Choosing a file the queue lost access to restores that entry instead of adding another.
+                jobs[index].sourceURL = url
+                jobs[index].sourceBookmark = try? fileAccess.bookmark(for: url)
+                jobs[index].errorMessage = nil
+                let id = jobs[index].id
+                transition(id, to: .probing)
+                selectedJobID = id
+                Task { await self.probe(id) }
+                continue
+            }
             let duplicate = jobs.contains { $0.sourceURL.standardizedFileURL.path == path }
             var job = ConversionJob.new(url: url, duplicate: duplicate)
             job.options = WebPOptions.preset(preset)
@@ -144,11 +256,17 @@ final class AppModel {
         preferences.collisionPolicy = policy
     }
 
+    func setDefaultPreset(_ preset: PresetID) {
+        defaultPreset = preset
+        preferences.lastPreset = preset
+    }
+
     func applyPreset(_ preset: PresetID, to id: UUID? = nil) {
         let target = id ?? selectedJobID
         guard let target, let index = jobs.firstIndex(where: { $0.id == target }) else { return }
         jobs[index].options = WebPOptions.preset(preset, keepingTrim: jobs[index].options)
         preferences.lastPreset = preset
+        defaultPreset = preset
         saveJobs()
     }
 
@@ -158,6 +276,7 @@ final class AppModel {
         change(&jobs[index].options)
         jobs[index].options = jobs[index].options.markingCustomIfNeeded()
         preferences.lastPreset = jobs[index].options.presetID
+        defaultPreset = jobs[index].options.presetID
         saveJobs()
     }
 
@@ -168,6 +287,8 @@ final class AppModel {
         guard destinationURL != nil else { return }
         guard engine.supportsAnimatedWebP else { return }
         stopQueue = false
+        runTotal = convertibleCount
+        runFinished = 0
         conversionTask?.cancel()
         conversionTask = Task { await self.runQueue() }
     }
@@ -292,6 +413,7 @@ final class AppModel {
         while !Task.isCancelled && !stopQueue {
             guard let id = jobs.first(where: \.canConvert)?.id else { return }
             await convert(id)
+            runFinished += 1
         }
     }
 
