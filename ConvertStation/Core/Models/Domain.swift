@@ -112,15 +112,20 @@ enum PresetID: String, Codable, CaseIterable, Identifiable, Sendable {
     case smallFile
     case balanced
     case highQuality
+    case maximum
     case custom
 
     var id: String { rawValue }
+
+    /// The presets with fixed numbers, in the order the UI shows them.
+    static let builtIn: [PresetID] = [.smallFile, .balanced, .highQuality, .maximum]
 
     var title: String {
         switch self {
         case .smallFile: "Small File"
         case .balanced: "Balanced"
         case .highQuality: "High Quality"
+        case .maximum: "Maximum"
         case .custom: "Custom"
         }
     }
@@ -130,6 +135,7 @@ enum PresetID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .smallFile: "Small"
         case .balanced: "Balanced"
         case .highQuality: "High"
+        case .maximum: "Max"
         case .custom: "Custom"
         }
     }
@@ -194,6 +200,18 @@ struct WebPOptions: Codable, Equatable, Sendable {
                 trimEndSeconds: current.trimEndSeconds,
                 allowLongClip: current.allowLongClip
             )
+        case .maximum:
+            // Every control at its top value: fastest frame rate offered, full width, best quality.
+            options = WebPOptions(
+                presetID: .maximum,
+                framesPerSecond: WebPLimits.fpsChoices.max() ?? 30,
+                maxPixelWidth: nil,
+                quality: WebPLimits.qualityRange.upperBound,
+                loopForever: current.loopForever,
+                trimStartSeconds: current.trimStartSeconds,
+                trimEndSeconds: current.trimEndSeconds,
+                allowLongClip: current.allowLongClip
+            )
         case .custom:
             options = current
             options.presetID = .custom
@@ -217,7 +235,7 @@ struct WebPOptions: Codable, Equatable, Sendable {
     /// A custom setup whose numbers land back on a preset is shown as that preset again.
     func matchingPresetIfPossible() -> WebPOptions {
         guard presetID == .custom else { return self }
-        for candidate in [PresetID.smallFile, .balanced, .highQuality] {
+        for candidate in PresetID.builtIn {
             let baseline = WebPOptions.preset(candidate, keepingTrim: self)
             if framesPerSecond == baseline.framesPerSecond
                 && maxPixelWidth == baseline.maxPixelWidth
@@ -280,7 +298,7 @@ struct WebPOptions: Codable, Equatable, Sendable {
         switch presetID {
         case .smallFile: 2
         case .balanced, .custom: 4
-        case .highQuality: 6
+        case .highQuality, .maximum: 6
         }
     }
 }
