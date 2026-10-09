@@ -16,6 +16,7 @@
 		4CF6B5718FCEF28FD632CC47 /* FFProbeParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB0D1BDA4688ACCC2BE94B2 /* FFProbeParser.swift */; };
 		4DC81F1794B7FDE1AA4C924E /* malformed.mov in Resources */ = {isa = PBXBuildFile; fileRef = 8AE97F17EBDA3301F4FA354A /* malformed.mov */; };
 		50275CC90F0A120AB44770DC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89241F6C5300B9C499B06DA1 /* SettingsView.swift */; };
+		524E6BC83ACD07116D965918 /* SavedPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64217B79D07B731A80A0C363 /* SavedPreset.swift */; };
 		55656B96F70EE51DC9A1897F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 35E79D54F6286934824013A9 /* Assets.xcassets */; };
 		5E175D499AD6ECF6A6838BDF /* SizeEstimate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DB73D3DF150A6269F15D6B /* SizeEstimate.swift */; };
 		6E13633BDEBC64F478042BD4 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7281AFD217C9B9E80293B003 /* Brand.swift */; };
@@ -25,6 +26,7 @@
 		8F49368A99D521AB81A92CBA /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 94A0B404229DB516DDE21A33 /* QuickLook.framework */; };
 		91094A37EA6D7D86DB5F3A24 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4745A0186F475A6306B09E38 /* AppModel.swift */; };
 		92F3F7CC5CBB7EADF75C2EFD /* BatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D50B6F7D9715E482900AF7 /* BatchView.swift */; };
+		9602871760DD767E9E564B69 /* PresetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9EAA26B32260084EBE66477 /* PresetPicker.swift */; };
 		A0DAFDB5D4829E96297A277D /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 9EEAE9392FA960DD0AA665E3 /* README.md */; };
 		AEED8EB9964B71421459EFC9 /* ConvertStationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FE0C8A4AB6CBCE0D27BBD98 /* ConvertStationTests.swift */; };
 		B358ED51374A79927CFC3932 /* FrameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD6E9BC6EBDB7CA4013B21E /* FrameStore.swift */; };
@@ -64,6 +66,7 @@
 		50360A96C9D9351AC797B930 /* FFmpegCommandBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFmpegCommandBuilder.swift; sourceTree = "<group>"; };
 		55ED504A3E617291FD03C00F /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		63DB73D3DF150A6269F15D6B /* SizeEstimate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SizeEstimate.swift; sourceTree = "<group>"; };
+		64217B79D07B731A80A0C363 /* SavedPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPreset.swift; sourceTree = "<group>"; };
 		66FCFDE08C970E1837B4C835 /* Helper.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Helper.entitlements; sourceTree = "<group>"; };
 		69CF886CDACCC3D2CE262D0F /* ConvertStationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertStationApp.swift; sourceTree = "<group>"; };
 		703805C3BD09D7490AD8CD65 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
@@ -78,6 +81,7 @@
 		94A0B404229DB516DDE21A33 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
 		9EEAE9392FA960DD0AA665E3 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		9F3C14E5BB2003821701CC61 /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
+		A9EAA26B32260084EBE66477 /* PresetPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetPicker.swift; sourceTree = "<group>"; };
 		AC5D3958F07D1FC91324A056 /* OutputPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputPublisher.swift; sourceTree = "<group>"; };
 		B5714F0ED75C0D70127A76CD /* QueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueView.swift; sourceTree = "<group>"; };
 		C568683FB2AEDB314F8402D5 /* AnimatedWebPProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedWebPProvider.swift; sourceTree = "<group>"; };
@@ -223,6 +227,7 @@
 			isa = PBXGroup;
 			children = (
 				C92D2E774BF9159B008E0BBF /* Domain.swift */,
+				64217B79D07B731A80A0C363 /* SavedPreset.swift */,
 				63DB73D3DF150A6269F15D6B /* SizeEstimate.swift */,
 			);
 			path = Models;
@@ -284,6 +289,7 @@
 				7720A50048FD669D1DF55322 /* ClipEditor.swift */,
 				703805C3BD09D7490AD8CD65 /* Components.swift */,
 				2CD6E9BC6EBDB7CA4013B21E /* FrameStore.swift */,
+				A9EAA26B32260084EBE66477 /* PresetPicker.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -478,8 +484,10 @@
 				C7E7867EA6387B8A83C7AB9A /* MainView.swift in Sources */,
 				75800BDCA394AAE6326C5DED /* OutputPublisher.swift in Sources */,
 				7523BF2701C3D3A3DB2CF085 /* PreferencesStore.swift in Sources */,
+				9602871760DD767E9E564B69 /* PresetPicker.swift in Sources */,
 				2EDF2E747AABA1E375035AF7 /* QueueView.swift in Sources */,
 				DEF876749CF8AAD1AAD6D38B /* QuickLookPresenter.swift in Sources */,
+				524E6BC83ACD07116D965918 /* SavedPreset.swift in Sources */,
 				50275CC90F0A120AB44770DC /* SettingsView.swift in Sources */,
 				5E175D499AD6ECF6A6838BDF /* SizeEstimate.swift in Sources */,
 				77A2844A3BACA37DAF06AFDE /* WebPHeaderParser.swift in Sources */,
