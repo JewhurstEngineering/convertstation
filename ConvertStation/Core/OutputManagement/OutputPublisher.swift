@@ -8,13 +8,17 @@ enum PublishPlan: Equatable, Sendable {
 }
 
 enum OutputPublisher {
-    static func proposedURL(source: URL, directory: URL) -> URL {
-        directory.appendingPathComponent(fileName(for: source))
+    static func proposedURL(source: URL, directory: URL, fileExtension: String = "webp") -> URL {
+        directory.appendingPathComponent(fileName(for: source, extension: fileExtension))
     }
 
-    static func fileName(for source: URL) -> String {
+    static func fileName(for source: URL, extension fileExtension: String = "webp") -> String {
         let base = sanitize(source.deletingPathExtension().lastPathComponent)
-        return base + ".webp"
+        let cleaned = fileExtension
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        let ext = cleaned.isEmpty ? "webp" : cleaned.filter { $0.isLetter || $0.isNumber }
+        return base + "." + (ext.isEmpty ? "webp" : ext)
     }
 
     static func sanitize(_ name: String) -> String {

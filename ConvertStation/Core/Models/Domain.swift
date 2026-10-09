@@ -262,7 +262,7 @@ struct WebPOptions: Codable, Equatable, Sendable {
         return (max(1, Int(sourceFPS.rounded(.down))), true)
     }
 
-    func effectiveInterval(sourceDuration: Double?) throws -> TrimInterval {
+    func effectiveInterval(sourceDuration: Double?, cappingLongClips: Bool = true) throws -> TrimInterval {
         let start = trimStartSeconds
         guard start >= 0 else {
             throw ConversionError.invalidOptions("Trim start can't be negative.")
@@ -288,7 +288,7 @@ struct WebPOptions: Codable, Equatable, Sendable {
             throw ConversionError.invalidOptions("Trim end is past the end of the file.")
         }
         var duration = end - start
-        if !allowLongClip, duration > WebPLimits.longClipSeconds {
+        if cappingLongClips, !allowLongClip, duration > WebPLimits.longClipSeconds {
             duration = WebPLimits.longClipSeconds
         }
         return TrimInterval(start: start, duration: duration)
@@ -308,7 +308,80 @@ struct TrimInterval: Equatable, Sendable {
     var duration: Double
 }
 
-struct SourceDescriptor: Codable, Equatable, Sendable {
+enum MediaKind: String, Codable, Equatable, Sendable {
+    case video
+    case audio
+    case still
+    case animation
+}
+
+enum OutputFamily: String, Codable, CaseIterable, Identifiable, Sendable {
+    case video
+    case animation
+    case image
+    case audio
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .video: "Video"
+        case .animation: "Animation"
+        case .image: "Image"
+        case .audio: "Audio"
+        }
+    }
+}
+
+struct StillOptions: Codable, Equatable, Sendable {
+    var maxEdge: Int?
+    var quality: Int
+
+    static let standard = StillOptions(maxEdge: nil, quality: 85)
+
+    static let lossyProfiles: Set<String> = [OutputID.jpeg, OutputID.heic, OutputID.stillWebP]
+}
+
+struct AudioOptions: Codable, Equatable, Sendable {
+    var bitrateKbps: Int
+    var sampleRate: Int
+
+    static let standard = AudioOptions(bitrateKbps: 192, sampleRate: 48_000)
+    static let bitrateChoices = [96, 128, 160, 192, 256, 320]
+    static let sampleRateChoices = [22_050, 44_100, 48_000]
+    static let lossyProfiles: Set<String> = [OutputID.m4aAAC, OutputID.opus, OutputID.mp3]
+}
+
+struct VideoOptions: Codable, Equatable, Sendable {
+    var maxPixelWidth: Int?
+    var quality: Int
+
+    static let standard = VideoOptions(maxPixelWidth: nil, quality: 70)
+}
+
+enum OutputID {
+    static let animatedWebP = "animated-webp"
+    static let gifAnimated = "gif.animated"
+    static let mp4 = "mp4.h264-aac"
+    static let mov = "mov.h264-aac"
+    static let webm = "webm.vp9-opus"
+    static let jpeg = "image.jpeg"
+    static let png = "image.png"
+    static let tiff = "image.tiff"
+    static let bmp = "image.bmp"
+    static let heic = "image.heic"
+    static let stillWebP = "image.webp"
+    static let stillGIF = "image.gif"
+    static let wav = "audio.wav"
+    static let aiff = "audio.aiff"
+    static let flac = "audio.flac"
+    static let m4aAAC = "audio.m4a-aac"
+    static let m4aALAC = "audio.m4a-alac"
+    static let opus = "audio.opus"
+    static let mp3 = "audio.mp3"
+}
+
+struct SourceDescriptor: Equatable, Sendable {
     var url: URL
     var detectedUTType: String
     var durationSeconds: Double?
@@ -324,6 +397,46 @@ struct SourceDescriptor: Codable, Equatable, Sendable {
     var fileSizeBytes: Int64?
     var formatName: String?
     var warnings: [String]
+    var kind: MediaKind
+    var audioCodecName: String?
+
+    init(
+        url: URL,
+        detectedUTType: String,
+        durationSeconds: Double?,
+        width: Int?,
+        height: Int?,
+        rotationDegrees: Int,
+        hasVideo: Bool,
+        hasAudio: Bool,
+        hasAlpha: Bool,
+        isHDR: Bool,
+        codecName: String?,
+        averageFrameRate: Double?,
+        fileSizeBytes: Int64?,
+        formatName: String?,
+        warnings: [String],
+        kind: MediaKind = .video,
+        audioCodecName: String? = nil
+    ) {
+        self.url = url
+        self.detectedUTType = detectedUTType
+        self.durationSeconds = durationSeconds
+        self.width = width
+        self.height = height
+        self.rotationDegrees = rotationDegrees
+        self.hasVideo = hasVideo
+        self.hasAudio = hasAudio
+        self.hasAlpha = hasAlpha
+        self.isHDR = isHDR
+        self.codecName = codecName
+        self.averageFrameRate = averageFrameRate
+        self.fileSizeBytes = fileSizeBytes
+        self.formatName = formatName
+        self.warnings = warnings
+        self.kind = kind
+        self.audioCodecName = audioCodecName
+    }
 
     var displayWidth: Int? {
         guard let width, let height else { return nil }
@@ -340,6 +453,64 @@ struct SourceDescriptor: Codable, Equatable, Sendable {
     }
 }
 
+extension SourceDescriptor: Codable {
+    enum CodingKeys: String, CodingKey {
+        case url, detectedUTType, durationSeconds, width, height, rotationDegrees
+        case hasVideo, hasAudio, hasAlpha, isHDR, codecName, averageFrameRate
+        case fileSizeBytes, formatName, warnings, kind, audioCodecName
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(URL.self, forKey: .url)
+        detectedUTType = try container.decode(String.self, forKey: .detectedUTType)
+        durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        width = try container.decodeIfPresent(Int.self, forKey: .width)
+        height = try container.decodeIfPresent(Int.self, forKey: .height)
+        rotationDegrees = try container.decode(Int.self, forKey: .rotationDegrees)
+        hasVideo = try container.decode(Bool.self, forKey: .hasVideo)
+        hasAudio = try container.decode(Bool.self, forKey: .hasAudio)
+        hasAlpha = try container.decode(Bool.self, forKey: .hasAlpha)
+        isHDR = try container.decode(Bool.self, forKey: .isHDR)
+        codecName = try container.decodeIfPresent(String.self, forKey: .codecName)
+        averageFrameRate = try container.decodeIfPresent(Double.self, forKey: .averageFrameRate)
+        fileSizeBytes = try container.decodeIfPresent(Int64.self, forKey: .fileSizeBytes)
+        formatName = try container.decodeIfPresent(String.self, forKey: .formatName)
+        warnings = try container.decode([String].self, forKey: .warnings)
+        audioCodecName = try container.decodeIfPresent(String.self, forKey: .audioCodecName)
+        if let kind = try container.decodeIfPresent(MediaKind.self, forKey: .kind) {
+            self.kind = kind
+        } else if hasVideo {
+            kind = .video
+        } else if hasAudio {
+            kind = .audio
+        } else {
+            kind = .still
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(url, forKey: .url)
+        try container.encode(detectedUTType, forKey: .detectedUTType)
+        try container.encodeIfPresent(durationSeconds, forKey: .durationSeconds)
+        try container.encodeIfPresent(width, forKey: .width)
+        try container.encodeIfPresent(height, forKey: .height)
+        try container.encode(rotationDegrees, forKey: .rotationDegrees)
+        try container.encode(hasVideo, forKey: .hasVideo)
+        try container.encode(hasAudio, forKey: .hasAudio)
+        try container.encode(hasAlpha, forKey: .hasAlpha)
+        try container.encode(isHDR, forKey: .isHDR)
+        try container.encodeIfPresent(codecName, forKey: .codecName)
+        try container.encodeIfPresent(averageFrameRate, forKey: .averageFrameRate)
+        try container.encodeIfPresent(fileSizeBytes, forKey: .fileSizeBytes)
+        try container.encodeIfPresent(formatName, forKey: .formatName)
+        try container.encode(warnings, forKey: .warnings)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(audioCodecName, forKey: .audioCodecName)
+    }
+}
+
 struct TargetDescriptor: Identifiable, Equatable, Sendable {
     var id: String
     var displayName: String
@@ -348,15 +519,19 @@ struct TargetDescriptor: Identifiable, Equatable, Sendable {
     var supportsAlpha: Bool
     var supportsAudio: Bool
     var providerID: String
+    var family: OutputFamily = .animation
+    var lossNotice: String = ""
 
     static let animatedWebP = TargetDescriptor(
-        id: "animated-webp",
-        displayName: "Animated WebP",
+        id: OutputID.animatedWebP,
+        displayName: "Animated WebP (.webp)",
         fileExtension: "webp",
         supportsAnimation: true,
         supportsAlpha: true,
         supportsAudio: false,
-        providerID: "ffmpeg-webp"
+        providerID: "ffmpeg-webp",
+        family: .animation,
+        lossNotice: "Audio is dropped. Animated WebP has no sound."
     )
 }
 
@@ -365,6 +540,9 @@ struct ConversionRequest: Equatable, Sendable {
     var sourceURL: URL
     var targetFormatID: String
     var options: WebPOptions
+    var stillOptions: StillOptions = .standard
+    var audioOptions: AudioOptions = .standard
+    var videoOptions: VideoOptions = .standard
     var destinationDirectory: URL
     var collisionPolicy: CollisionPolicy
 }
@@ -380,12 +558,16 @@ struct ConversionResult: Codable, Equatable, Sendable {
     var warnings: [String]
 }
 
-struct ConversionJob: Identifiable, Equatable, Codable, Sendable {
+struct ConversionJob: Identifiable, Equatable, Sendable {
     var id: UUID
     var sourceURL: URL
     var state: JobState
     var descriptor: SourceDescriptor?
+    var profileID: String = OutputID.animatedWebP
     var options: WebPOptions
+    var stillOptions: StillOptions = .standard
+    var audioOptions: AudioOptions = .standard
+    var videoOptions: VideoOptions = .standard
     var progress: Double?
     var errorMessage: String?
     var technicalDetail: String?
@@ -395,14 +577,10 @@ struct ConversionJob: Identifiable, Equatable, Codable, Sendable {
     /// Kept off the saved job file. Bookmarks live beside it so older queues still open.
     var sourceBookmark: Data?
 
-    enum CodingKeys: String, CodingKey {
-        case id, sourceURL, state, descriptor, options, progress, errorMessage, technicalDetail, result, warnings, isDuplicate
-    }
-
     var displayName: String { sourceURL.lastPathComponent }
 
     var canConvert: Bool {
-        guard descriptor?.hasVideo == true else { return false }
+        guard descriptor != nil else { return false }
         switch state {
         case .ready, .interrupted, .cancelled, .failed:
             return true
@@ -429,6 +607,52 @@ struct ConversionJob: Identifiable, Equatable, Codable, Sendable {
     }
 }
 
+extension ConversionJob: Codable {
+    enum CodingKeys: String, CodingKey {
+        case id, sourceURL, state, descriptor, options, progress, errorMessage, technicalDetail, result, warnings, isDuplicate
+        case profileID, stillOptions, audioOptions, videoOptions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sourceURL = try container.decode(URL.self, forKey: .sourceURL)
+        state = try container.decode(JobState.self, forKey: .state)
+        descriptor = try container.decodeIfPresent(SourceDescriptor.self, forKey: .descriptor)
+        profileID = try container.decodeIfPresent(String.self, forKey: .profileID) ?? OutputID.animatedWebP
+        options = try container.decode(WebPOptions.self, forKey: .options)
+        stillOptions = try container.decodeIfPresent(StillOptions.self, forKey: .stillOptions) ?? .standard
+        audioOptions = try container.decodeIfPresent(AudioOptions.self, forKey: .audioOptions) ?? .standard
+        videoOptions = try container.decodeIfPresent(VideoOptions.self, forKey: .videoOptions) ?? .standard
+        progress = try container.decodeIfPresent(Double.self, forKey: .progress)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        technicalDetail = try container.decodeIfPresent(String.self, forKey: .technicalDetail)
+        result = try container.decodeIfPresent(ConversionResult.self, forKey: .result)
+        warnings = try container.decode([String].self, forKey: .warnings)
+        isDuplicate = try container.decode(Bool.self, forKey: .isDuplicate)
+        sourceBookmark = nil
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sourceURL, forKey: .sourceURL)
+        try container.encode(state, forKey: .state)
+        try container.encodeIfPresent(descriptor, forKey: .descriptor)
+        try container.encode(profileID, forKey: .profileID)
+        try container.encode(options, forKey: .options)
+        try container.encode(stillOptions, forKey: .stillOptions)
+        try container.encode(audioOptions, forKey: .audioOptions)
+        try container.encode(videoOptions, forKey: .videoOptions)
+        try container.encodeIfPresent(progress, forKey: .progress)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try container.encodeIfPresent(technicalDetail, forKey: .technicalDetail)
+        try container.encodeIfPresent(result, forKey: .result)
+        try container.encode(warnings, forKey: .warnings)
+        try container.encode(isDuplicate, forKey: .isDuplicate)
+    }
+}
+
 enum ConversionError: LocalizedError, Equatable {
     case engineMissing(String)
     case unreadable(String)
@@ -443,7 +667,7 @@ enum ConversionError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .engineMissing(let detail):
-            "Animated WebP isn't available. \(detail)"
+            "Conversion isn't available. \(detail)"
         case .unreadable(let detail):
             "This file couldn't be read. \(detail)"
         case .invalidOptions(let detail):
