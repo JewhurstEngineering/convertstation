@@ -43,9 +43,9 @@ struct ConvertStationApp: App {
         }
 
         Settings {
-            SettingsView(model: model)
+            SettingsView(model: model, checkForUpdates: { updates.checkForUpdates() })
                 .frame(width: 560)
-                .frame(minHeight: 560)
+                .frame(minHeight: 720)
                 .onAppear(perform: AppIcon.install)
         }
     }

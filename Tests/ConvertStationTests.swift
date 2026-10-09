@@ -411,6 +411,12 @@ struct MockAudioProvider: ConversionProvider {
     #expect(Clock.parse("abc") == nil)
 }
 
+@Test func applicationsPathDetectsTheInstalledCopy() {
+    #expect(AppInstall.isApplicationsPath("/Applications/ConvertStation.app"))
+    #expect(!AppInstall.isApplicationsPath("/tmp/ConvertStation.app"))
+    #expect(!AppInstall.isRunningFromApplications)
+}
+
 @Test func sparkleFeedPointsAtGitHubAppcast() {
     let url = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
     #expect(url == "https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml")

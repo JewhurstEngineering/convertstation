@@ -2,6 +2,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    var checkForUpdates: () -> Void = {}
+
+    @State private var installMessage: String?
+    @State private var installSucceeded = false
+    @State private var isInstalling = false
 
     var body: some View {
         Form {
@@ -106,9 +111,86 @@ struct SettingsView: View {
             } header: {
                 Text("Privacy")
             }
+
+            Section {
+                LabeledContent("Version", value: appVersion)
+                Button("Check for Updates…", action: checkForUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("ConvertStation looks for a newer release on its own. You can check now.")
+            }
+
+            Section {
+                if AppInstall.isRunningFromApplications {
+                    Label("Installed in Applications. Search “ConvertStation”.", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    Button {
+                        installToApplications()
+                    } label: {
+                        if isInstalling {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Install to Applications", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                    .disabled(isInstalling)
+                    .accessibilityLabel("Install to Applications")
+
+                    Label("Install. This does not open a second copy.", systemImage: "1.circle")
+                    Label("Quit this copy, then open Applications and ConvertStation.", systemImage: "2.circle")
+
+                    if installSucceeded {
+                        HStack(spacing: 8) {
+                            Button("Reveal in Finder") {
+                                AppInstall.revealInstalledApp()
+                            }
+                            Button("Quit this copy and open the installed app") {
+                                AppInstall.launchInstalledAndTerminate()
+                            }
+                        }
+                    }
+                }
+
+                if let installMessage {
+                    Text(installMessage)
+                        .font(.callout)
+                        .foregroundStyle(installSucceeded ? Color.secondary : Color.orange)
+                }
+            } header: {
+                Text("Install")
+            } footer: {
+                Text("A copy from Xcode or a download is not the installed app. Installing puts ConvertStation in Applications and replaces one that is already there.")
+            }
         }
         .formStyle(.grouped)
         .padding(8)
+    }
+
+    private var appVersion: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        return build.isEmpty ? short : "\(short) (\(build))"
+    }
+
+    private func installToApplications() {
+        isInstalling = true
+        installMessage = nil
+        Task {
+            do {
+                let destination = try await Task.detached {
+                    try AppInstall.copyRunningAppToApplications()
+                }.value
+                installSucceeded = true
+                installMessage = "Copied to \(destination.path). Quit this copy, then open ConvertStation from Applications."
+            } catch {
+                installSucceeded = false
+                installMessage = error.localizedDescription
+            }
+            isInstalling = false
+        }
     }
 
     private var folderTitle: String {
