@@ -163,9 +163,7 @@ private struct OutputStage: View {
         ZStack(alignment: .topLeading) {
             Brand.stage
             AnimatedImageView(url: url)
-                .aspectRatio(aspect, contentMode: .fit)
                 .padding(inset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             StageBadge(text: badge)
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -215,7 +213,9 @@ struct SettingsForm: View {
                     presetSection
                 }
                 controls
-                if !compact {
+                if compact {
+                    compactEstimate
+                } else {
                     estimateCard
                 }
                 largerAdvice
@@ -238,13 +238,8 @@ struct SettingsForm: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Preset")
                 .font(.headline)
-            Picker("Preset", selection: preset) {
-                ForEach(PresetID.allCases) { preset in
-                    Text(preset.shortTitle).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            SegmentedPills(options: PresetID.allCases, selection: preset, title: \.shortTitle)
+                .accessibilityLabel("Preset")
             Text(presetCaption)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -283,9 +278,12 @@ struct SettingsForm: View {
                     .padding(.vertical, 10)
                 GroupedRowDivider()
                 row {
+                    Text("Loop forever")
+                    Spacer()
                     Toggle("Loop forever", isOn: loop)
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                        .labelsHidden()
                 }
                 if hasLongClip {
                     GroupedRowDivider()
@@ -335,14 +333,39 @@ struct SettingsForm: View {
     @ViewBuilder
     private var longClipToggle: some View {
         if hasLongClip {
-            Toggle("Convert past 30 seconds", isOn: longClip)
-                .toggleStyle(.switch)
-                .controlSize(.small)
+            HStack {
+                Text("Convert past 30 seconds")
+                Spacer()
+                Toggle("Convert past 30 seconds", isOn: longClip)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+            }
         }
     }
 
     private var hasLongClip: Bool {
         (job.descriptor?.durationSeconds ?? 0) > WebPLimits.longClipSeconds
+    }
+
+    @ViewBuilder
+    private var compactEstimate: some View {
+        if let estimate = model.estimate(for: job) {
+            HStack(spacing: 6) {
+                Text("Estimate")
+                    .foregroundStyle(.secondary)
+                Text("≈ \(MediaFormat.bytes(estimate.bytes))")
+                    .fontWeight(.semibold)
+                if let change = estimate.change(from: job.descriptor?.fileSizeBytes) {
+                    Text(SizeText.change(change))
+                        .foregroundStyle(SizeText.changeColor(change))
+                }
+                Text("· \(estimate.frames) frames · \(estimate.width)×\(estimate.height)")
+                    .foregroundStyle(.secondary)
+            }
+            .monospacedDigit()
+            .accessibilityElement(children: .combine)
+        }
     }
 
     @ViewBuilder
@@ -577,7 +600,7 @@ struct ResultSummary: View {
             let lighter = SizeText.lighterPreset(than: job.options.presetID)
             let lighterBytes = lighter.flatMap { model.estimate(for: job, preset: $0)?.bytes }
             AdviceBox(
-                title: "\(SizeText.change(change).dropFirst())% larger than the original",
+                title: "\(SizeText.percent(change)) larger than the original",
                 message: reason(lighter: lighter, lighterBytes: lighterBytes)
             ) {
                 if let lighter {
@@ -586,7 +609,7 @@ struct ResultSummary: View {
                 }
             }
         } else if let change, change < -0.05 {
-            Text("\(SizeText.change(change).dropFirst())% smaller than the original")
+            Text("\(SizeText.percent(change)) smaller than the original")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Brand.success)
         }
