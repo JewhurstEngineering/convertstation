@@ -338,6 +338,50 @@ struct MockAudioProvider: ConversionProvider {
     #expect(probed.hasAudio == false)
 }
 
+@Test func estimateMirrorsTheScaleFilter() {
+    #expect(SizeEstimator.outputSize(width: 756, height: 426, maxPixelWidth: 1280) == (756, 426))
+    #expect(SizeEstimator.outputSize(width: 1920, height: 1080, maxPixelWidth: 800) == (800, 450))
+    #expect(SizeEstimator.outputSize(width: 641, height: 361, maxPixelWidth: nil) == (640, 360))
+}
+
+@Test func estimateGrowsWithQualityAndFrameRate() throws {
+    let source = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie")
+    let small = try #require(SizeEstimator.estimate(options: .preset(.smallFile), source: source))
+    let balanced = try #require(SizeEstimator.estimate(options: .preset(.balanced), source: source))
+    let high = try #require(SizeEstimator.estimate(options: .preset(.highQuality), source: source))
+    #expect(small.bytes < balanced.bytes)
+    #expect(balanced.bytes < high.bytes)
+    #expect(balanced.frames == 24)
+    #expect(balanced.width == 640)
+}
+
+@Test func estimateFollowsTheTrim() throws {
+    let source = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie")
+    var options = WebPOptions.balanced
+    options.trimStartSeconds = 0.5
+    options.trimEndSeconds = 1.5
+    let estimate = try #require(SizeEstimator.estimate(options: options, source: source))
+    #expect(estimate.frames == 12)
+    #expect(abs(estimate.duration - 1) < 0.001)
+    #expect(estimate.change(from: 0) == nil)
+}
+
+@Test func clockReadsAndWritesTrimTimes() {
+    #expect(Clock.precise(5.45) == "0:05.45")
+    #expect(Clock.precise(61.2) == "1:01.20")
+    #expect(Clock.parse("5.45") == 5.45)
+    #expect(Clock.parse("1:02") == 62)
+    #expect(Clock.parse("abc") == nil)
+}
+
+@Test func lighterPresetStepsDown() {
+    #expect(SizeText.lighterPreset(than: .custom) == .balanced)
+    #expect(SizeText.lighterPreset(than: .balanced) == .smallFile)
+    #expect(SizeText.lighterPreset(than: .smallFile) == nil)
+    #expect(SizeText.change(0.34) == "+34%")
+    #expect(SizeText.change(-0.55) == "\u{2212}55%")
+}
+
 private func sampleSource(hasVideo: Bool, hasAudio: Bool, type: String) -> SourceDescriptor {
     SourceDescriptor(
         url: URL(fileURLWithPath: "/tmp/sample.mov"),
