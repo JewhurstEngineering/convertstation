@@ -48,6 +48,18 @@ private extension NSColor {
     }
 }
 
+struct BrandLockup: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Image(colorScheme == .dark ? "WordmarkDark" : "WordmarkLight")
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: 280, maxHeight: 44)
+            .accessibilityLabel("ConvertStation")
+    }
+}
+
 struct AccentButtonStyle: ButtonStyle {
     var enabled: Bool = true
 

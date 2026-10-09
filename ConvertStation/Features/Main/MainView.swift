@@ -42,18 +42,13 @@ struct MainView: View {
                     .accessibilityLabel("ConvertStation")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Button {
-                    } label: {
-                        Label("Animated WebP", systemImage: "checkmark")
-                    }
-                    Text("More formats are on the way")
-                } label: {
-                    Label("Animated WebP", systemImage: "play.rectangle")
-                        .labelStyle(.titleAndIcon)
+                if let job = model.selectedJob {
+                    FormatPicker(model: model, job: job)
+                } else {
+                    Label("Output", systemImage: "play.rectangle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Output format")
                 }
-                .help("Output format")
-                .accessibilityLabel("Output format, Animated WebP")
 
                 Picker("Layout", selection: layout) {
                     ForEach(LayoutMode.allCases) { mode in
@@ -169,7 +164,7 @@ private struct BottomBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if model.engineCheckComplete, !model.engine.supportsAnimatedWebP {
+            if model.engineCheckComplete, model.engine.ffmpegURL == nil {
                 Label(model.engine.detail, systemImage: "exclamationmark.triangle")
                     .font(.callout)
                     .foregroundStyle(Brand.warning)
@@ -217,7 +212,7 @@ private struct BottomBar: View {
                 .buttonStyle(AccentButtonStyle(enabled: canConvert))
                 .disabled(!canConvert)
                 .keyboardShortcut(.return, modifiers: .command)
-                .accessibilityHint(model.destinationURL == nil ? "Asks for an output folder first" : "Converts ready files to animated WebP")
+                .accessibilityHint(model.destinationURL == nil ? "Asks for an output folder first" : "Converts ready files")
             }
         }
         .padding(.horizontal, 16)
@@ -231,7 +226,7 @@ private struct BottomBar: View {
     }
 
     private var canConvert: Bool {
-        model.engine.supportsAnimatedWebP && !model.isConverting && model.convertibleCount > 0
+        model.engineCheckComplete && !model.isConverting && model.convertibleCount > 0
     }
 
     private var convertTitle: String {

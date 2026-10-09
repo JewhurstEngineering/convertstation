@@ -9,6 +9,19 @@ struct SettingsView: View {
     @State private var isInstalling = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            BrandLockup()
+                .padding(.top, 18)
+                .padding(.bottom, 6)
+            Text("Files stay on this Mac.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+            settingsForm
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
             Section {
                 LabeledContent("Folder") {
@@ -43,7 +56,7 @@ struct SettingsView: View {
             } header: {
                 Text("Output")
             } footer: {
-                Text("Converted files go in this folder. The original movie is left alone.")
+                Text("Converted files go in this folder. The original file is left alone.")
             }
 
             Section {
@@ -64,6 +77,9 @@ struct SettingsView: View {
             }
 
             Section {
+                LabeledContent("Still images") {
+                    Text("Built in")
+                }
                 LabeledContent("Animated WebP") {
                     Text(engineValue)
                         .foregroundStyle(engineColor)

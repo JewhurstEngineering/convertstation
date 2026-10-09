@@ -6,16 +6,14 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "play.rectangle")
-                .font(.system(size: 30, weight: .regular))
-                .foregroundStyle(Brand.magenta)
+            Image("Mark")
+                .resizable()
+                .scaledToFit()
                 .frame(width: 72, height: 72)
-                .background(Brand.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
-                .accessibilityHidden(true)
-            Text(model.dropTargeted ? "Release to add" : "Drop videos to convert")
+                .accessibilityLabel("ConvertStation")
+            Text(model.dropTargeted ? "Release to add" : "Drop files to convert")
                 .font(.title2.weight(.semibold))
-            Text("MOV, MP4 and M4V clips become looping Animated WebP files. Your originals are never changed.")
+            Text("Video, images, and audio stay on this Mac. The format list only shows what this file can become. Originals are never changed.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

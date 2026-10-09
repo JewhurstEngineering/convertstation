@@ -166,8 +166,8 @@ private struct BatchRow: View {
 
     @ViewBuilder
     private var settingsChip: some View {
-        if job.descriptor?.hasVideo == true {
-            Text(model.savedPreset(matching: job.options)?.name ?? SizeText.settingsSummary(job.options))
+        if job.descriptor != nil {
+            Text(model.profileSummary(for: job))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Brand.fieldFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))

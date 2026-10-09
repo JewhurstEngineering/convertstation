@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Studio's middle column: file header, the preview stage, and the trim strip.
@@ -95,7 +96,7 @@ private struct StudioCenter: View {
             case .source:
                 VideoStage(playback: playback, aspect: aspect, badge: "Source")
             case .output:
-                OutputStage(url: result.outputURL, aspect: aspect, badge: "Output · loops")
+                OutputStage(url: result.outputURL, aspect: aspect, badge: outputBadge)
             case .sideBySide:
                 HStack(spacing: 12) {
                     VideoStage(playback: playback, aspect: aspect, badge: "Source", inset: 14)
@@ -103,6 +104,10 @@ private struct StudioCenter: View {
                 }
                 .onAppear { if !playback.playing { playback.toggle() } }
             }
+        } else if job.descriptor?.kind == .still {
+            StillStage(url: job.sourceURL, badge: "Source")
+        } else if job.descriptor?.kind == .audio {
+            AudioStage()
         } else if job.descriptor?.hasVideo == true {
             VideoStage(playback: playback, aspect: aspect, badge: "Source")
         } else {
@@ -127,10 +132,24 @@ private struct StudioCenter: View {
         return min(max(width / height, 0.3), 3)
     }
 
+    private var outputBadge: String {
+        let family = model.target(for: job)?.family
+        if family == .animation {
+            return "Output · loops"
+        }
+        return "Output"
+    }
+
     private var metadataLine: String {
         if let result = job.result {
-            var parts = ["Animated WebP", "\(result.width)×\(result.height)", "\(result.frameCount) frames"]
-            parts.append(result.loopForever ? "loops" : "plays once")
+            var parts = [model.target(for: job)?.displayName ?? "Output"]
+            if result.width > 0, result.height > 0 {
+                parts.append("\(result.width)×\(result.height)")
+            }
+            if result.frameCount > 1 {
+                parts.append("\(result.frameCount) frames")
+                parts.append(result.loopForever ? "loops" : "plays once")
+            }
             return parts.joined(separator: " · ")
         }
         var parts: [String] = []
@@ -209,22 +228,16 @@ struct SettingsForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 14 : 20) {
-            if job.descriptor?.hasVideo == true {
-                if compact {
-                    PresetPicker(model: model, job: job)
-                } else {
-                    presetSection
-                }
-                controls
-                if compact {
-                    compactEstimate
-                } else {
-                    estimateCard
-                }
-                largerAdvice
+            FormatPicker(model: model, job: job)
+            if let notice = model.target(for: job)?.lossNotice, !notice.isEmpty {
+                Label(notice, systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            profileControls
             notes
-            if !compact, model.jobs.count > 1, job.descriptor?.hasVideo == true {
+            if !compact, model.jobs.count > 1, model.target(for: job) != nil {
                 HStack(spacing: 4) {
                     Text("Settings apply to this file.")
                         .foregroundStyle(.secondary)
@@ -235,6 +248,157 @@ struct SettingsForm: View {
             }
         }
         .disabled(job.state.isActive)
+    }
+
+    @ViewBuilder
+    private var profileControls: some View {
+        switch model.target(for: job)?.family {
+        case .animation where job.profileID == OutputID.animatedWebP:
+            if compact {
+                PresetPicker(model: model, job: job)
+            } else {
+                presetSection
+            }
+            controls
+            if compact {
+                compactEstimate
+            } else {
+                estimateCard
+            }
+            largerAdvice
+        case .animation:
+            gifControls
+        case .video:
+            videoControls
+        case .image:
+            stillControls
+        case .audio:
+            audioControls
+        case nil:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var gifControls: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    labeled("Frame rate") { fpsPicker }
+                    labeled("Max width") { widthPicker }
+                }
+                Toggle("Loop forever", isOn: loop)
+                    .toggleStyle(.checkbox)
+                longClipToggle
+            }
+        } else {
+            GroupedRows {
+                row {
+                    Text("Frame rate")
+                    Spacer()
+                    fpsPicker.fixedSize()
+                }
+                GroupedRowDivider()
+                row {
+                    Text("Max width")
+                    Spacer()
+                    widthPicker.fixedSize()
+                }
+                GroupedRowDivider()
+                row {
+                    Text("Loop forever")
+                    Spacer()
+                    Toggle("Loop forever", isOn: loop)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                if hasLongClip {
+                    GroupedRowDivider()
+                    row { longClipToggle }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var videoControls: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 12) {
+                labeled("Max width") { videoWidthPicker }
+                videoQuality
+            }
+        } else {
+            GroupedRows {
+                row {
+                    Text("Max width")
+                    Spacer()
+                    videoWidthPicker.fixedSize()
+                }
+                GroupedRowDivider()
+                videoQuality
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var stillControls: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 12) {
+                labeled("Max edge") { stillEdgePicker }
+                if showsStillQuality { stillQuality }
+            }
+        } else {
+            GroupedRows {
+                row {
+                    Text("Max edge")
+                    Spacer()
+                    stillEdgePicker.fixedSize()
+                }
+                if showsStillQuality {
+                    GroupedRowDivider()
+                    stillQuality
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var audioControls: some View {
+        if compact {
+            VStack(alignment: .leading, spacing: 12) {
+                labeled("Sample rate") { sampleRatePicker }
+                if showsAudioBitrate { labeled("Bitrate") { bitratePicker } }
+            }
+        } else {
+            GroupedRows {
+                row {
+                    Text("Sample rate")
+                    Spacer()
+                    sampleRatePicker.fixedSize()
+                }
+                if showsAudioBitrate {
+                    GroupedRowDivider()
+                    row {
+                        Text("Bitrate")
+                        Spacer()
+                        bitratePicker.fixedSize()
+                    }
+                }
+            }
+        }
+    }
+
+    private var showsStillQuality: Bool {
+        StillOptions.lossyProfiles.contains(job.profileID)
+    }
+
+    private var showsAudioBitrate: Bool {
+        AudioOptions.lossyProfiles.contains(job.profileID)
     }
 
     private var presetSection: some View {
@@ -300,6 +464,80 @@ struct SettingsForm: View {
         }
         .labelsHidden()
         .accessibilityLabel("Frame rate")
+    }
+
+    private var videoWidthPicker: some View {
+        Picker("Max width", selection: videoWidth) {
+            Text("Original").tag(Optional<Int>.none)
+            ForEach(WebPLimits.widthChoices, id: \.self) { width in
+                Text("\(width.formatted()) px").tag(Optional(width))
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Maximum width")
+    }
+
+    private var stillEdgePicker: some View {
+        Picker("Max edge", selection: stillEdge) {
+            Text("Original").tag(Optional<Int>.none)
+            ForEach([512, 1024, 2048, 4096], id: \.self) { edge in
+                Text("\(edge.formatted()) px").tag(Optional(edge))
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Maximum edge")
+    }
+
+    private var sampleRatePicker: some View {
+        Picker("Sample rate", selection: sampleRate) {
+            ForEach(AudioOptions.sampleRateChoices, id: \.self) { rate in
+                Text("\(rate.formatted()) Hz").tag(rate)
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Sample rate")
+    }
+
+    private var bitratePicker: some View {
+        Picker("Bitrate", selection: bitrate) {
+            ForEach(AudioOptions.bitrateChoices, id: \.self) { rate in
+                Text("\(rate) kbps").tag(rate)
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("Bitrate")
+    }
+
+    private var videoQuality: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Quality")
+                Spacer()
+                Text("\(job.videoOptions.quality)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: videoQualityValue, in: 1...100, step: 1)
+                .labelsHidden()
+                .tint(Brand.blue)
+                .accessibilityLabel("Quality")
+        }
+    }
+
+    private var stillQuality: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Quality")
+                Spacer()
+                Text("\(job.stillOptions.quality)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: stillQualityValue, in: 0...100, step: 1)
+                .labelsHidden()
+                .tint(Brand.blue)
+                .accessibilityLabel("Quality")
+        }
     }
 
     private var widthPicker: some View {
@@ -503,6 +741,82 @@ struct SettingsForm: View {
             set: { value in model.updateOptions(for: job.id) { $0.allowLongClip = value } }
         )
     }
+
+    private var videoWidth: Binding<Int?> {
+        Binding(
+            get: { job.videoOptions.maxPixelWidth },
+            set: { value in model.updateVideoOptions(for: job.id) { $0.maxPixelWidth = value } }
+        )
+    }
+
+    private var videoQualityValue: Binding<Double> {
+        Binding(
+            get: { Double(job.videoOptions.quality) },
+            set: { value in model.updateVideoOptions(for: job.id) { $0.quality = Int(value.rounded()) } }
+        )
+    }
+
+    private var stillEdge: Binding<Int?> {
+        Binding(
+            get: { job.stillOptions.maxEdge },
+            set: { value in model.updateStillOptions(for: job.id) { $0.maxEdge = value } }
+        )
+    }
+
+    private var stillQualityValue: Binding<Double> {
+        Binding(
+            get: { Double(job.stillOptions.quality) },
+            set: { value in model.updateStillOptions(for: job.id) { $0.quality = Int(value.rounded()) } }
+        )
+    }
+
+    private var sampleRate: Binding<Int> {
+        Binding(
+            get: { job.audioOptions.sampleRate },
+            set: { value in model.updateAudioOptions(for: job.id) { $0.sampleRate = value } }
+        )
+    }
+
+    private var bitrate: Binding<Int> {
+        Binding(
+            get: { job.audioOptions.bitrateKbps },
+            set: { value in model.updateAudioOptions(for: job.id) { $0.bitrateKbps = value } }
+        )
+    }
+}
+
+private struct StillStage: View {
+    var url: URL
+    var badge: String
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Brand.stage
+            if let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .padding(24)
+            }
+            StageBadge(text: badge)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityLabel("Source image")
+    }
+}
+
+private struct AudioStage: View {
+    var body: some View {
+        ZStack {
+            Brand.stage
+            Label("Audio", systemImage: "waveform")
+                .font(.title3)
+                .foregroundStyle(Color(white: 0.78))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityLabel("Audio file")
+    }
 }
 
 /// What a finished conversion produced, compared with the source.
@@ -523,8 +837,10 @@ struct ResultSummary: View {
             advice
             GroupedRows {
                 fact("Used", usedSummary)
-                GroupedRowDivider()
-                fact("Frames", "\(result.frameCount)")
+                if result.frameCount > 0 {
+                    GroupedRowDivider()
+                    fact("Frames", "\(result.frameCount)")
+                }
                 GroupedRowDivider()
                 fact("Saved to", result.outputURL.deletingLastPathComponent().lastPathComponent)
             }
@@ -543,7 +859,20 @@ struct ResultSummary: View {
 
     private var sourceBytes: Int64? { job.descriptor?.fileSizeBytes }
 
+    private var resultTitle: String {
+        switch model.target(for: job)?.family {
+        case .animation: "Animation"
+        case .image: "Image"
+        case .audio: "Audio"
+        case .video: "Video"
+        case nil: "Output"
+        }
+    }
+
     private var usedSummary: String {
+        guard job.profileID == OutputID.animatedWebP else {
+            return model.target(for: job)?.displayName ?? "Output"
+        }
         let numbers = "\(job.options.framesPerSecond) fps · Q\(job.options.quality)"
         if let saved = model.savedPreset(matching: job.options) {
             return "\(saved.name) · \(numbers)"
@@ -562,7 +891,7 @@ struct ResultSummary: View {
             let largest = Double(max(sourceBytes, result.bytes))
             VStack(spacing: 10) {
                 bar("Original", bytes: sourceBytes, fraction: Double(sourceBytes) / largest, color: .secondary, bold: false)
-                bar("WebP", bytes: result.bytes, fraction: Double(result.bytes) / largest,
+                bar(resultTitle, bytes: result.bytes, fraction: Double(result.bytes) / largest,
                     color: (change ?? 0) > 0 ? Brand.warning : Brand.success, bold: true)
             }
             .accessibilityElement(children: .combine)
@@ -593,7 +922,7 @@ struct ResultSummary: View {
 
     @ViewBuilder
     private var advice: some View {
-        if let change, change > 0.05 {
+        if job.profileID == OutputID.animatedWebP, let change, change > 0.05 {
             let lighter = SizeText.lighterPreset(than: job.options.presetID)
             let lighterBytes = lighter.flatMap { model.estimate(for: job, preset: $0)?.bytes }
             AdviceBox(
