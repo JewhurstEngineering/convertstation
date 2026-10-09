@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SYSTEM_PREFIXES = ("/usr/lib/", "/System/")
@@ -216,7 +217,43 @@ def main():
     return 0
 
 
+def install_dock_icon(app):
+    """The asset catalog icns only contains 16 and 128. Dock then draws the generic icon."""
+    names = (
+        "icon_16x16.png",
+        "icon_16x16@2x.png",
+        "icon_32x32.png",
+        "icon_32x32@2x.png",
+        "icon_128x128.png",
+        "icon_128x128@2x.png",
+        "icon_256x256.png",
+        "icon_256x256@2x.png",
+        "icon_512x512.png",
+        "icon_512x512@2x.png",
+    )
+    source = Path(__file__).resolve().parents[1] / "Resources" / "Assets.xcassets" / "AppIcon.appiconset"
+    scratch = Path(tempfile.mkdtemp(prefix="cs-icon-"))
+    iconset = scratch / "AppIcon.iconset"
+    iconset.mkdir()
+    copied = 0
+    for name in names:
+        src = source / name
+        if not src.exists():
+            continue
+        shutil.copy2(src, iconset / name)
+        copied += 1
+    if copied < len(names):
+        print("warning: app icon is missing sizes; the Dock icon may stay generic", file=sys.stderr)
+        shutil.rmtree(scratch, ignore_errors=True)
+        return
+    dest = app / "Contents" / "Resources" / "AppIcon.icns"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    run(["iconutil", "-c", "icns", str(iconset), "-o", str(dest)])
+    shutil.rmtree(scratch, ignore_errors=True)
+
+
 def sign(app, helpers, frameworks):
+    install_dock_icon(app)
     entitlements = Path(__file__).resolve().parents[1] / "ConvertStation" / "Helper.entitlements"
     for library in frameworks.glob("*.dylib"):
         run(["codesign", "--force", "--sign", "-", str(library)])
