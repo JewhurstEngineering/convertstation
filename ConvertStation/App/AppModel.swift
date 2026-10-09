@@ -46,7 +46,14 @@ final class AppModel {
             destinationURL = url
             fileAccess.beginAccess(url)
         }
-        jobs = JobStore.load()
+        jobs = JobStore.load().map { job in
+            var job = job
+            job.options = job.options.matchingPresetIfPossible()
+            return job
+        }
+        if defaultPreset == .custom {
+            setDefaultPreset(.balanced)
+        }
         restoreSecurityScopes()
         selectedJobID = jobs.first?.id
     }
@@ -274,9 +281,12 @@ final class AppModel {
         let target = id ?? selectedJobID
         guard let target, let index = jobs.firstIndex(where: { $0.id == target }) else { return }
         change(&jobs[index].options)
-        jobs[index].options = jobs[index].options.markingCustomIfNeeded()
-        preferences.lastPreset = jobs[index].options.presetID
-        defaultPreset = jobs[index].options.presetID
+        jobs[index].options = jobs[index].options.markingCustomIfNeeded().matchingPresetIfPossible()
+        // Tweaking one file shouldn't turn the default for new files into "Custom".
+        if jobs[index].options.presetID != .custom {
+            preferences.lastPreset = jobs[index].options.presetID
+            defaultPreset = jobs[index].options.presetID
+        }
         saveJobs()
     }
 
