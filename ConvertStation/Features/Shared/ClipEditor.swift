@@ -240,17 +240,17 @@ struct TrimTimeline: View {
         HStack(spacing: 2) {
             let images = frames.strips[job.sourceURL] ?? []
             ForEach(0..<stripCount, id: \.self) { index in
-                ZStack {
-                    Brand.fieldFill
-                    if !images.isEmpty {
-                        let image = images[min(images.count - 1, index * images.count / stripCount)]
-                        Image(decorative: image, scale: 1)
-                            .resizable()
-                            .scaledToFill()
+                // Fill images sit in an overlay so their size never feeds back into the strip's layout.
+                Brand.fieldFill
+                    .overlay {
+                        if !images.isEmpty {
+                            let image = images[min(images.count - 1, index * images.count / stripCount)]
+                            Image(decorative: image, scale: 1)
+                                .resizable()
+                                .scaledToFill()
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+                    .clipped()
             }
         }
         .background(Brand.hairline)

@@ -9,18 +9,18 @@ struct ClipThumbnail: View {
     var height: CGFloat = 36
 
     var body: some View {
-        ZStack {
-            Brand.fieldFill
-            if job.state == .failed || job.state == .blockedByPermission {
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(Brand.danger)
-            } else if let image = FrameStore.shared.thumbnails[job.sourceURL] {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .scaledToFill()
+        Brand.fieldFill
+            .overlay {
+                if job.state == .failed || job.state == .blockedByPermission {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(Brand.danger)
+                } else if let image = FrameStore.shared.thumbnails[job.sourceURL] {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                }
             }
-        }
-        .frame(width: width, height: height)
+            .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -149,6 +149,43 @@ struct GroupedRows<Content: View>: View {
     }
 }
 
+/// Equal-width pill segments. Unlike the system segmented control it shrinks with its column.
+struct SegmentedPills<Value: Hashable>: View {
+    var options: [Value]
+    @Binding var selection: Value
+    var title: (Value) -> String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.self) { option in
+                let selected = option == selection
+                Button {
+                    selection = option
+                } label: {
+                    Text(title(option))
+                        .fontWeight(selected ? .semibold : .regular)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 26)
+                        .background {
+                            if selected {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Brand.panel)
+                                    .shadow(color: .black.opacity(0.12), radius: 1, y: 1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+            }
+        }
+        .padding(2)
+        .background(Brand.fieldFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
 struct GroupedRowDivider: View {
     var body: some View {
         Rectangle().fill(Brand.hairline).frame(height: 1)
@@ -162,6 +199,11 @@ enum SizeText {
         if percent > 0 { return "+\(percent)%" }
         if percent < 0 { return "\u{2212}\(-percent)%" }
         return "±0%"
+    }
+
+    /// "34%", without a sign, for sentences that already say larger or smaller.
+    static func percent(_ fraction: Double) -> String {
+        "\(Int((abs(fraction) * 100).rounded()))%"
     }
 
     static func changeColor(_ fraction: Double) -> Color {
@@ -186,57 +228,63 @@ enum SizeText {
 }
 
 /// Plays an animated WebP (or GIF) through ImageIO, which composites each frame.
-struct AnimatedImageView: NSViewRepresentable {
+/// Frames land in SwiftUI state so the picture sizes like any other image.
+struct AnimatedImageView: View {
     var url: URL
+    @StateObject private var driver = AnimationDriver()
 
-    func makeNSView(context: Context) -> NSImageView {
-        let view = NSImageView()
-        view.imageScaling = .scaleProportionallyUpOrDown
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        context.coordinator.start(url: url, in: view)
-        return view
-    }
-
-    func updateNSView(_ view: NSImageView, context: Context) {
-        if context.coordinator.url != url {
-            context.coordinator.start(url: url, in: view)
+    var body: some View {
+        Group {
+            if let frame = driver.frame {
+                Image(decorative: frame, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            } else if driver.failed {
+                Label("Can't play this file", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(Color(white: 0.7))
+            } else {
+                ProgressView().controlSize(.small)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { driver.start(url) }
+        .onChange(of: url) { driver.start(url) }
+        .onDisappear { driver.stop() }
     }
+}
 
-    static func dismantleNSView(_ view: NSImageView, coordinator: Coordinator) {
-        coordinator.stop()
-    }
+@MainActor
+final class AnimationDriver: ObservableObject {
+    @Published private(set) var frame: CGImage?
+    @Published private(set) var failed = false
+    private var generation = 0
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    @MainActor
-    final class Coordinator {
-        var url: URL?
-        private var generation = 0
-
-        func start(url: URL, in view: NSImageView) {
-            stop()
-            self.url = url
-            let current = generation
-            let options = [kCGImageAnimationLoopCount: 0] as CFDictionary
-            let status = CGAnimateImageAtURLWithBlock(url as CFURL, options) { [weak self, weak view] _, image, stopFlag in
-                MainActor.assumeIsolated {
-                    guard let self, let view, self.generation == current else {
-                        stopFlag.pointee = true
-                        return
-                    }
-                    view.image = NSImage(cgImage: image, size: .zero)
+    func start(_ url: URL) {
+        generation += 1
+        let current = generation
+        failed = false
+        let status = CGAnimateImageAtURLWithBlock(url as CFURL, nil) { [weak self] _, image, stop in
+            // ImageIO calls back on the main queue.
+            MainActor.assumeIsolated {
+                guard let self, self.generation == current else {
+                    stop.pointee = true
+                    return
                 }
+                self.frame = image
             }
-            if status != noErr, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        }
+        if status != noErr {
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                let first = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-                view.image = NSImage(cgImage: first, size: .zero)
+                frame = first
+            } else {
+                failed = true
             }
         }
+    }
 
-        func stop() {
-            generation += 1
-        }
+    func stop() {
+        generation += 1
     }
 }
