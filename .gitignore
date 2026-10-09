@@ -1,6 +1,9 @@
 .DS_Store
 DerivedData/
 build/
+artifacts/
+.swiftpm/
+sparkle_private_key*
 *.xcuserstate
 xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
