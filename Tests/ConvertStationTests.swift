@@ -122,6 +122,43 @@ struct MockAudioProvider: ConversionProvider {
     #expect(high.quality == 85)
 }
 
+@Test func maxPresetTurnsEverythingUp() {
+    let max = WebPOptions.preset(.maximum)
+    #expect(max.framesPerSecond == 30)
+    #expect(max.maxPixelWidth == nil)
+    #expect(max.quality == 100)
+    #expect(max.compressionLevel == 6)
+    #expect(SizeText.lighterPreset(than: .maximum) == .highQuality)
+}
+
+@Test func customSettingsSnapBackToAMatchingPreset() {
+    var options = WebPOptions.preset(.balanced)
+    options.quality = 40
+    options = options.markingCustomIfNeeded()
+    #expect(options.presetID == .custom)
+    options.quality = 75
+    #expect(options.matchingPresetIfPossible().presetID == .balanced)
+}
+
+@Test func savedPresetRoundTripsAndKeepsTrim() throws {
+    var custom = WebPOptions.preset(.balanced)
+    custom.framesPerSecond = 24
+    custom.quality = 90
+    custom.presetID = .custom
+    let saved = SavedPreset(name: "Docs", options: custom)
+    let decoded = try JSONDecoder().decode(SavedPreset.self, from: JSONEncoder().encode(saved))
+    #expect(decoded == saved)
+
+    var other = WebPOptions.preset(.smallFile)
+    other.trimStartSeconds = 1.5
+    let applied = saved.applied(to: other)
+    #expect(applied.framesPerSecond == 24)
+    #expect(applied.quality == 90)
+    #expect(applied.trimStartSeconds == 1.5)
+    #expect(applied.presetID == .custom)
+    #expect(saved.matches(applied))
+}
+
 @Test func editingAPresetValueMarksItCustom() {
     var options = WebPOptions.balanced
     options.quality = 40
