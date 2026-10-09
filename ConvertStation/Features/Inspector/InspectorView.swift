@@ -8,46 +8,46 @@ struct InspectorView: View {
         Group {
             if let job = model.selectedJob {
                 VStack(alignment: .leading, spacing: 12) {
-                        header(job)
-                        if job.descriptor?.hasVideo == true {
-                            SourcePreview(url: job.sourceURL)
-                                .id(job.id)
-                                .layoutPriority(1)
-                        }
-                        if job.descriptor?.hasAudio == true {
-                            note("Audio will be dropped. Animated WebP is silent.")
-                        }
-                        formatSection(job)
-                        if model.targets(for: job).contains(where: { $0.id == TargetDescriptor.animatedWebP.id }) {
-                            controls(job)
-                        }
-                        if !job.warnings.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Notes")
-                                    .font(.headline)
-                                ForEach(job.warnings, id: \.self) { warning in
-                                    Text(warning)
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                }
+                    header(job)
+                    if job.descriptor?.hasVideo == true {
+                        SourcePreview(url: job.sourceURL, aspect: pictureAspect(job))
+                            .id(job.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    if job.descriptor?.hasAudio == true {
+                        note("Audio will be dropped. Animated WebP is silent.")
+                    }
+                    formatSection(job)
+                    if model.targets(for: job).contains(where: { $0.id == TargetDescriptor.animatedWebP.id }) {
+                        controls(job)
+                    }
+                    if !job.warnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Notes")
+                                .font(.headline)
+                            ForEach(job.warnings, id: \.self) { warning in
+                                Text(warning)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        if let result = job.result {
-                            resultSection(job, result)
+                    }
+                    if let result = job.result {
+                        resultSection(job, result)
+                    }
+                    if let message = job.errorMessage {
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(job.state == .failed ? .red : .secondary)
+                    }
+                    if let detail = job.technicalDetail, !detail.isEmpty {
+                        DisclosureGroup("Technical details") {
+                            Text(detail)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        if let message = job.errorMessage {
-                            Text(message)
-                                .font(.callout)
-                                .foregroundStyle(job.state == .failed ? .red : .secondary)
-                        }
-                        if let detail = job.technicalDetail, !detail.isEmpty {
-                            DisclosureGroup("Technical details") {
-                                Text(detail)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
+                    }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -62,6 +62,13 @@ struct InspectorView: View {
         .frame(maxHeight: .infinity)
         .background(.thinMaterial)
         .accessibilityLabel("Inspector")
+    }
+
+    private func pictureAspect(_ job: ConversionJob) -> CGFloat {
+        let width = CGFloat(job.descriptor?.displayWidth ?? 16)
+        let height = CGFloat(job.descriptor?.displayHeight ?? 9)
+        guard width > 0, height > 0 else { return 16 / 9 }
+        return min(max(width / height, 0.5), 2.4)
     }
 
     private func header(_ job: ConversionJob) -> some View {
@@ -161,10 +168,10 @@ struct InspectorView: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: quality(job), in: 0...100, step: 1) {
-                    Text("Quality")
-                }
-                .tint(Brand.magenta)
+                Slider(value: quality(job), in: 0...100, step: 1)
+                    .labelsHidden()
+                    .accessibilityLabel("Quality")
+                    .tint(Brand.magenta)
             }
 
             Toggle("Loop forever", isOn: loop(job))
@@ -206,11 +213,13 @@ struct InspectorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            HStack {
+            HStack(spacing: 10) {
                 Button("Quick Look") { model.quickLook(result.outputURL) }
-                Button("Reveal in Finder") { model.reveal(result.outputURL) }
+                Button("Show in Finder") { model.reveal(result.outputURL) }
                 Button("Convert Again") { model.convertAgain(job.id) }
             }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
         }
     }
 
@@ -294,19 +303,21 @@ struct InspectorView: View {
 /// The system player chrome is a large floating bar that covers a small preview.
 /// Playback stays in an `AVPlayerView` with no controls, and a short bar sits under the picture.
 private struct SourcePreview: View {
+    var aspect: CGFloat
     @StateObject private var playback: PreviewPlayback
 
-    init(url: URL) {
+    init(url: URL, aspect: CGFloat) {
+        self.aspect = aspect
         _playback = StateObject(wrappedValue: PreviewPlayback(url: url))
     }
 
     var body: some View {
         VStack(spacing: 6) {
             PlayerHost(player: playback.player)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(minHeight: 200)
+                .aspectRatio(aspect, contentMode: .fit)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack(spacing: 8) {
                 Button {
                     playback.toggle()

@@ -5,23 +5,43 @@ struct QueuePane: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Group {
-            if model.jobs.isEmpty {
-                EmptyQueue(targeted: model.dropTargeted, colorScheme: colorScheme) {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("Files")
+                    .font(.headline)
+                Spacer()
+                Button {
                     model.isChoosingFiles = true
+                } label: {
+                    Label("Add File", systemImage: "plus")
                 }
-            } else {
-                List(selection: $model.selectedJobID) {
-                    ForEach(model.jobs) { job in
-                        QueueRow(job: job, duplicateCount: duplicateCount(job)) {
-                            model.remove(job.id)
-                        }
-                        .tag(job.id)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 8))
+                .labelStyle(.titleAndIcon)
+                .buttonStyle(.bordered)
+                .keyboardShortcut("o", modifiers: .command)
+                .help("Choose files to convert")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Group {
+                if model.jobs.isEmpty {
+                    EmptyQueue(targeted: model.dropTargeted, colorScheme: colorScheme) {
+                        model.isChoosingFiles = true
                     }
+                } else {
+                    List(selection: $model.selectedJobID) {
+                        ForEach(model.jobs) { job in
+                            QueueRow(job: job, duplicateCount: duplicateCount(job)) {
+                                model.remove(job.id)
+                            }
+                            .tag(job.id)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 10))
+                        }
+                    }
+                    .listStyle(.inset)
+                    .accessibilityLabel("Conversion queue")
                 }
-                .listStyle(.inset)
-                .accessibilityLabel("Conversion queue")
             }
         }
         .overlay {
@@ -75,31 +95,19 @@ private struct QueueRow: View {
     var remove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(job.displayName)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Spacer()
-                status
-                Button(role: .destructive) {
-                    remove()
-                } label: {
-                    Image(systemName: "minus.circle")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.displayName)
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(metaLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.borderless)
-                .help("Remove from the queue")
-                .accessibilityLabel("Remove \(job.displayName)")
-            }
-            HStack(spacing: 10) {
-                meta(job.descriptor?.codecName?.uppercased() ?? typeName)
-                if let bytes = job.descriptor?.fileSizeBytes ?? fileSize {
-                    meta(MediaFormat.bytes(bytes))
-                }
-                meta(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
-                if let duration = job.descriptor?.durationSeconds {
-                    meta(MediaFormat.duration(duration))
-                }
+                Spacer(minLength: 8)
                 if duplicateCount > 1 || job.isDuplicate {
                     Text("Duplicate")
                         .font(.caption.weight(.semibold))
@@ -107,10 +115,20 @@ private struct QueueRow: View {
                         .padding(.vertical, 2)
                         .background(Brand.violet.opacity(0.16), in: Capsule())
                         .foregroundStyle(Brand.violet)
+                        .fixedSize()
                 }
+                status
+                    .fixedSize()
+                Button(role: .destructive) {
+                    remove()
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.borderless)
+                .fixedSize()
+                .help("Remove from the queue")
+                .accessibilityLabel("Remove \(job.displayName)")
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
             if job.state == .running || job.state == .verifying {
                 if let progress = job.progress {
                     ProgressView(value: progress)
@@ -155,6 +173,18 @@ private struct QueueRow: View {
         }
     }
 
+    private var metaLine: String {
+        var parts: [String] = [job.descriptor?.codecName?.uppercased() ?? typeName]
+        if let bytes = job.descriptor?.fileSizeBytes ?? fileSize {
+            parts.append(MediaFormat.bytes(bytes))
+        }
+        parts.append(MediaFormat.dimensions(width: job.descriptor?.displayWidth, height: job.descriptor?.displayHeight))
+        if let duration = job.descriptor?.durationSeconds {
+            parts.append(MediaFormat.duration(duration))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     private var typeName: String {
         job.sourceURL.pathExtension.uppercased()
     }
@@ -166,7 +196,4 @@ private struct QueueRow: View {
         return (value as? NSNumber)?.int64Value
     }
 
-    private func meta(_ text: String) -> some View {
-        Text(text)
-    }
 }

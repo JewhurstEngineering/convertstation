@@ -9,9 +9,9 @@ struct MainView: View {
         VStack(spacing: 0) {
             HSplitView {
                 QueuePane(model: model)
-                    .frame(minWidth: 250, idealWidth: 300, maxWidth: 380, maxHeight: .infinity)
+                    .frame(minWidth: 340, idealWidth: 400, maxWidth: 480, maxHeight: .infinity)
                 InspectorView(model: model)
-                    .frame(minWidth: 520, idealWidth: 760, maxHeight: .infinity)
+                    .frame(minWidth: 560, idealWidth: 820, maxHeight: .infinity)
                     .layoutPriority(1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -24,15 +24,6 @@ struct MainView: View {
                     .resizable()
                     .frame(width: 26, height: 26)
                     .accessibilityLabel("ConvertStation")
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    model.isChoosingFiles = true
-                } label: {
-                    Label("Add Files", systemImage: "plus")
-                }
-                .keyboardShortcut("o", modifiers: .command)
-                .help("Choose files to convert")
             }
         }
         .fileImporter(
