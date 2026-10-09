@@ -24,6 +24,7 @@ final class AppModel {
     var collisionPrompt: CollisionPrompt?
     var quickLook = QuickLookPresenter()
     var layoutMode: LayoutMode = .studio
+    private(set) var savedPresets: [SavedPreset] = []
     /// Size of the current run and how many of its files have finished, for "Converting 1 of 2".
     private(set) var runTotal = 0
     private(set) var runFinished = 0
@@ -42,6 +43,7 @@ final class AppModel {
         collisionPolicy = preferences.collisionPolicy
         defaultPreset = preferences.lastPreset
         layoutMode = preferences.layoutMode
+        savedPresets = preferences.savedPresets
         if let data = preferences.destinationBookmark, let url = try? fileAccess.resolveBookmark(data) {
             destinationURL = url
             fileAccess.beginAccess(url)
@@ -166,6 +168,39 @@ final class AppModel {
             jobs[index].options = options
         }
         saveJobs()
+    }
+
+    /// The saved preset whose numbers match this file, if any.
+    func savedPreset(matching options: WebPOptions) -> SavedPreset? {
+        guard options.presetID == .custom else { return nil }
+        return savedPresets.first { $0.matches(options) }
+    }
+
+    func applySavedPreset(_ preset: SavedPreset, to id: UUID) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[index].options = preset.applied(to: jobs[index].options)
+        saveJobs()
+    }
+
+    /// Saves a file's current settings under a name. A preset with the same name is replaced.
+    @discardableResult
+    func saveCustomPreset(named rawName: String, from id: UUID) -> SavedPreset? {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let options = jobs.first(where: { $0.id == id })?.options else { return nil }
+        let existing = savedPresets.firstIndex { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        let preset = SavedPreset(id: existing.map { savedPresets[$0].id } ?? UUID(), name: name, options: options)
+        if let existing {
+            savedPresets[existing] = preset
+        } else {
+            savedPresets.append(preset)
+        }
+        preferences.savedPresets = savedPresets
+        return preset
+    }
+
+    func deleteSavedPreset(_ id: UUID) {
+        savedPresets.removeAll { $0.id == id }
+        preferences.savedPresets = savedPresets
     }
 
     func resetToDefault(_ id: UUID) {

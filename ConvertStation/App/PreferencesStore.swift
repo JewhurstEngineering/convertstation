@@ -7,6 +7,7 @@ final class PreferencesStore {
     private let bookmarkKey = "destinationBookmark"
     private let presetKey = "lastPreset"
     private let layoutKey = "layoutMode"
+    private let savedPresetsKey = "savedPresets"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -27,6 +28,13 @@ final class PreferencesStore {
     var lastPreset: PresetID {
         get { defaults.string(forKey: presetKey).flatMap(PresetID.init(rawValue:)) ?? .balanced }
         set { defaults.set(newValue.rawValue, forKey: presetKey) }
+    }
+
+    var savedPresets: [SavedPreset] {
+        get {
+            defaults.data(forKey: savedPresetsKey).flatMap { try? JSONDecoder().decode([SavedPreset].self, from: $0) } ?? []
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: savedPresetsKey) }
     }
 
     var layoutMode: LayoutMode {
