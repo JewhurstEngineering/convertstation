@@ -9,6 +9,7 @@ struct MainView: View {
             if model.jobs.isEmpty {
                 EmptyStateView(model: model)
             } else {
+                Divider()
                 switch model.layoutMode {
                 case .studio:
                     // Side columns are fixed so the preview, not the chrome, absorbs window resizes.

@@ -64,7 +64,7 @@ struct QueueSidebar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 16)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Brand.sidebar)
+        .background(Brand.sidebar, ignoresSafeAreaEdges: [])
     }
 
     private var summary: String {
