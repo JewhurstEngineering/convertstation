@@ -74,7 +74,7 @@ final class AppModel {
     }
 
     nonisolated static func makeRegistry(from status: EngineStatus) -> CapabilityRegistry {
-        var providers: [any ConversionProvider] = [StillImageProvider()]
+        var providers: [any ConversionProvider] = [StillImageProvider(), DocumentProvider()]
         guard let binaries = status.binaries else {
             return CapabilityRegistry(providers: providers)
         }
@@ -98,6 +98,14 @@ final class AppModel {
         case .audio:
             if ids.contains(OutputID.m4aAAC) { return OutputID.m4aAAC }
             return targets.first { $0.family == .audio }?.id ?? targets[0].id
+        case .document:
+            let ext = DocumentInspector.normalizedExtension(source.url)
+            if ext == "md" {
+                if ids.contains(OutputID.rtf) { return OutputID.rtf }
+            } else if ids.contains(OutputID.markdown) {
+                return OutputID.markdown
+            }
+            return targets[0].id
         }
     }
 
@@ -132,8 +140,13 @@ final class AppModel {
     }
 
     var progressTitle: String {
-        guard runTotal > 1 else { return "Converting…" }
-        return "Converting \(min(runFinished + 1, runTotal)) of \(runTotal)…"
+        let percent = jobs.first { $0.state == .running || $0.state == .verifying }?.progress
+        let count = percent.map { "\(Int(($0 * 100).rounded()))%" }
+        if runTotal > 1 {
+            let place = "Converting \(min(runFinished + 1, runTotal)) of \(runTotal)"
+            return count.map { "\(place)… \($0)" } ?? "\(place)…"
+        }
+        return count.map { "Converting… \($0)" } ?? "Converting…"
     }
 
     func estimate(for job: ConversionJob) -> OutputEstimate? {
@@ -435,7 +448,18 @@ final class AppModel {
     }
 
     func reveal(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        reveal([url])
+    }
+
+    func reveal(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    private static func collisionName(_ urls: [URL]) -> String {
+        guard let first = urls.first else { return "This file" }
+        if urls.count == 1 { return first.lastPathComponent }
+        return "\(first.lastPathComponent) and \(urls.count - 1) more"
     }
 
     func quickLook(_ url: URL) {
@@ -502,6 +526,12 @@ final class AppModel {
     }
 
     private func inspect(url: URL, ffprobe: URL?) async throws -> SourceDescriptor {
+        if PDFInspector.isPDF(url) {
+            return try PDFInspector.inspect(url: url)
+        }
+        if DocumentInspector.isDocument(url) {
+            return try DocumentInspector.inspect(url: url)
+        }
         if let ffprobe {
             do {
                 return try await Task.detached {
@@ -550,40 +580,81 @@ final class AppModel {
             return
         }
 
-        let proposed = OutputPublisher.proposedURL(source: sourceURL, directory: destination, fileExtension: fileExtension)
         let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
-        let publishTarget: URL
+        let pageCount = target.providerID == "imageio-still" ? descriptor.pageCount : 1
+        let proposedPages = OutputPublisher.pageURLs(
+            source: sourceURL,
+            directory: destination,
+            fileExtension: fileExtension,
+            pageCount: pageCount
+        )
+        let publishTargets: [URL]
         let replacing: Bool
         do {
-            switch try OutputPublisher.plan(proposed: proposed, source: sourceURL, policy: collisionPolicy, fileExists: exists) {
-            case .write(let url):
-                publishTarget = url
-                replacing = false
-            case .replace(let url):
-                let choice = await promptCollision(jobID: id, filename: url.lastPathComponent, replaceOnly: true)
-                guard choice == .replace else {
-                    finishSkipOrCancel(id, choice: choice)
-                    return
-                }
-                publishTarget = url
-                replacing = true
-            case .skip:
-                transition(id, to: .cancelled)
-                setMessage(id, ConversionError.skippedExisting.errorDescription, technical: nil)
-                saveJobs()
-                return
-            case .ask(_, let url):
-                let choice = await promptCollision(jobID: id, filename: url.lastPathComponent, replaceOnly: false)
-                switch choice {
-                case .keepBoth:
-                    publishTarget = OutputPublisher.uniqueURL(url, fileExists: exists)
-                    replacing = false
-                case .replace:
-                    publishTarget = url
+            if pageCount > 1 {
+                switch try OutputPublisher.planPages(proposedPages, source: sourceURL, policy: collisionPolicy, fileExists: exists) {
+                case .write(let urls, let replace):
+                    publishTargets = urls
+                    replacing = replace
+                case .confirmReplace(let urls):
+                    let choice = await promptCollision(jobID: id, filename: Self.collisionName(urls), replaceOnly: true)
+                    guard choice == .replace else {
+                        finishSkipOrCancel(id, choice: choice)
+                        return
+                    }
+                    publishTargets = urls
                     replacing = true
-                case .skip, .cancel:
-                    finishSkipOrCancel(id, choice: choice)
+                case .skip:
+                    transition(id, to: .cancelled)
+                    setMessage(id, ConversionError.skippedExisting.errorDescription, technical: nil)
+                    saveJobs()
                     return
+                case .ask(let urls):
+                    let choice = await promptCollision(jobID: id, filename: Self.collisionName(urls), replaceOnly: false)
+                    switch choice {
+                    case .keepBoth:
+                        publishTargets = urls.map { OutputPublisher.uniqueURL($0, fileExists: exists) }
+                        replacing = false
+                    case .replace:
+                        publishTargets = urls
+                        replacing = true
+                    case .skip, .cancel:
+                        finishSkipOrCancel(id, choice: choice)
+                        return
+                    }
+                }
+            } else {
+                let proposed = proposedPages[0]
+                switch try OutputPublisher.plan(proposed: proposed, source: sourceURL, policy: collisionPolicy, fileExists: exists) {
+                case .write(let url):
+                    publishTargets = [url]
+                    replacing = false
+                case .replace(let url):
+                    let choice = await promptCollision(jobID: id, filename: url.lastPathComponent, replaceOnly: true)
+                    guard choice == .replace else {
+                        finishSkipOrCancel(id, choice: choice)
+                        return
+                    }
+                    publishTargets = [url]
+                    replacing = true
+                case .skip:
+                    transition(id, to: .cancelled)
+                    setMessage(id, ConversionError.skippedExisting.errorDescription, technical: nil)
+                    saveJobs()
+                    return
+                case .ask(_, let url):
+                    let choice = await promptCollision(jobID: id, filename: url.lastPathComponent, replaceOnly: false)
+                    switch choice {
+                    case .keepBoth:
+                        publishTargets = [OutputPublisher.uniqueURL(url, fileExists: exists)]
+                        replacing = false
+                    case .replace:
+                        publishTargets = [url]
+                        replacing = true
+                    case .skip, .cancel:
+                        finishSkipOrCancel(id, choice: choice)
+                        return
+                    }
                 }
             }
         } catch {
@@ -593,7 +664,10 @@ final class AppModel {
 
         transition(id, to: .running)
         if let index = jobs.firstIndex(where: { $0.id == id }) {
-            jobs[index].progress = 0
+            // Animated WebP emits no timestamp until the encoder finishes, so a
+            // 0% bar would sit there for the whole job. Leave it unset and the
+            // row shows an indeterminate bar instead.
+            jobs[index].progress = target.id == OutputID.animatedWebP ? nil : 0
             jobs[index].errorMessage = nil
             jobs[index].result = nil
         }
@@ -621,11 +695,18 @@ final class AppModel {
         )
         do {
             let result: ConversionResult
-            if target.providerID == "imageio-still" {
+            if target.providerID == "appkit-document" {
+                result = try DocumentConversion.convert(
+                    request: request,
+                    source: descriptor,
+                    resolvedDestination: publishTargets[0],
+                    replacing: replacing
+                )
+            } else if target.providerID == "imageio-still" {
                 result = try await StillImageConversion.convert(
                     request: request,
                     source: descriptor,
-                    resolvedDestination: publishTarget,
+                    destinations: publishTargets,
                     replacing: replacing
                 )
             } else if target.id == OutputID.animatedWebP {
@@ -639,7 +720,7 @@ final class AppModel {
                     collisionPolicy: collisionPolicy,
                     binaries: binaries,
                     runner: runner,
-                    resolvedDestination: publishTarget,
+                    resolvedDestination: publishTargets[0],
                     replacing: replacing
                 ) { fraction in
                     Task { @MainActor in
@@ -656,7 +737,7 @@ final class AppModel {
                     source: descriptor,
                     binaries: binaries,
                     runner: runner,
-                    resolvedDestination: publishTarget,
+                    resolvedDestination: publishTargets[0],
                     replacing: replacing
                 ) { fraction in
                     Task { @MainActor in
