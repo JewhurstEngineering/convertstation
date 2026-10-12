@@ -73,24 +73,37 @@ enum WebPConversion {
             destinationDirectory: destinationDirectory,
             collisionPolicy: collisionPolicy
         )
-        let provider = AnimatedWebPProvider(binaries: binaries)
+        try AnimatedWebPProvider(binaries: binaries).validate(request, source: source)
         let staging = try fileManager.url(
             for: .itemReplacementDirectory,
             in: .userDomainMask,
             appropriateFor: destinationDirectory,
             create: true
         )
-        let temporary = staging.appendingPathComponent("\(request.id.uuidString).partial.webp")
-        let plan = try provider.makePlan(request, source: source, temporaryOutput: temporary)
-        return try await FFmpegSession.run(
-            plan: plan,
-            runner: runner,
-            resolvedDestination: resolvedDestination,
-            replacing: replacing,
-            onProgress: onProgress
-        ) { url in
-            let info = try WebPHeaderParser.parse(file: url)
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+        let plans = try FFmpegCommandBuilder.chunkedPlans(
+            request: request,
+            source: source,
+            directory: staging,
+            ffmpeg: binaries.ffmpeg
+        )
+        let started = Date()
+        do {
+            for (index, plan) in plans.enumerated() {
+                let output = try await runner.run(executable: plan.executableURL, arguments: plan.arguments) { _ in }
+                if output.cancelled || Task.isCancelled {
+                    try? fileManager.removeItem(at: staging)
+                    throw ConversionError.cancelled
+                }
+                guard output.exitCode == 0 else {
+                    try? fileManager.removeItem(at: staging)
+                    throw ConversionError.processFailed(exitCode: output.exitCode, log: output.standardError)
+                }
+                onProgress(min(0.99, Double(index + 1) / Double(plans.count)))
+            }
+            let joined = staging.appendingPathComponent("\(request.id.uuidString).partial.webp")
+            try WebPAnimationJoiner.join(plans.map(\.temporaryOutput), to: joined)
+            let info = try WebPHeaderParser.parse(file: joined)
+            let bytes = (try? fileManager.attributesOfItem(atPath: joined.path)[.size] as? Int64) ?? 0
             let interval = try options.effectiveInterval(sourceDuration: source.durationSeconds)
             try OutputValidator.validate(
                 info: info,
@@ -99,12 +112,22 @@ enum WebPConversion {
                 source: source,
                 interval: interval
             )
-            return CheckedMedia(
+            try OutputPublisher.publish(temporary: joined, to: resolvedDestination, replacing: replacing)
+            try? fileManager.removeItem(at: staging)
+            let publishedSize = (try? fileManager.attributesOfItem(atPath: resolvedDestination.path)[.size] as? Int64) ?? 0
+            return ConversionResult(
+                outputURL: resolvedDestination,
+                bytes: publishedSize,
+                elapsedSeconds: Date().timeIntervalSince(started),
                 width: info.canvasWidth,
                 height: info.canvasHeight,
                 frameCount: info.frameCount,
-                loopForever: info.loopCount == 0
+                loopForever: info.loopCount == 0,
+                warnings: plans.first?.warnings ?? []
             )
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
         }
     }
 }

@@ -83,6 +83,87 @@ enum WebPHeaderParser {
     }
 }
 
+enum WebPAnimationJoiner {
+    /// Each piece is a whole animated WebP. The result keeps the first file's
+    /// canvas and loop, and plays every frame in order.
+    static func join(_ parts: [URL], to destination: URL) throws {
+        guard let first = parts.first else {
+            throw ConversionError.validationFailed("Animated WebP produced no frames.")
+        }
+        if parts.count == 1 {
+            if first.standardizedFileURL != destination.standardizedFileURL {
+                try FileManager.default.copyItem(at: first, to: destination)
+            }
+            return
+        }
+        let firstInfo = try WebPHeaderParser.parse(file: first)
+        let firstData = try Data(contentsOf: first)
+        var payload = try preamble(firstData)
+        for part in parts {
+            let info = try WebPHeaderParser.parse(file: part)
+            guard info.canvasWidth == firstInfo.canvasWidth, info.canvasHeight == firstInfo.canvasHeight else {
+                throw ConversionError.validationFailed("Animated WebP pieces did not match in size.")
+            }
+            guard info.frameCount > 0 else {
+                throw ConversionError.validationFailed("Animated WebP produced no frames.")
+            }
+            let data = part == first ? firstData : try Data(contentsOf: part)
+            payload.append(try frameChunks(data))
+        }
+        var file = Data()
+        file.append(contentsOf: Array("RIFF".utf8))
+        file.append(little32(UInt32(payload.count + 4)))
+        file.append(contentsOf: Array("WEBP".utf8))
+        file.append(payload)
+        try file.write(to: destination, options: .atomic)
+    }
+
+    private static func preamble(_ data: Data) throws -> Data {
+        let end = try firstFrameOffset(data)
+        return data.subdata(in: 12..<end)
+    }
+
+    private static func frameChunks(_ data: Data) throws -> Data {
+        let start = try firstFrameOffset(data)
+        return data.subdata(in: start..<data.count)
+    }
+
+    private static func firstFrameOffset(_ data: Data) throws -> Int {
+        guard data.count >= 12,
+              data.prefix(4) == Data("RIFF".utf8),
+              data.subdata(in: 8..<12) == Data("WEBP".utf8) else {
+            throw ConversionError.validationFailed("Output is not a WebP file.")
+        }
+        var index = 12
+        while index + 8 <= data.count {
+            let tag = data.subdata(in: index..<index + 4)
+            let size = Int(read32(data, at: index + 4))
+            if tag == Data("ANMF".utf8) {
+                return index
+            }
+            index += 8 + size + (size & 1)
+        }
+        throw ConversionError.validationFailed("Animated WebP produced no frames.")
+    }
+
+    private static func read32(_ data: Data, at offset: Int) -> UInt32 {
+        let start = data.startIndex + offset
+        return UInt32(data[start])
+            | (UInt32(data[start + 1]) << 8)
+            | (UInt32(data[start + 2]) << 16)
+            | (UInt32(data[start + 3]) << 24)
+    }
+
+    private static func little32(_ value: UInt32) -> Data {
+        Data([
+            UInt8(value & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 24) & 0xff)
+        ])
+    }
+}
+
 enum OutputValidator {
     static func validate(
         info: WebPAnimationInfo,

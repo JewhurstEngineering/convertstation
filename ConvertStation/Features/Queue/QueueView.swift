@@ -87,11 +87,18 @@ private struct QueueRow: View {
     var remove: () -> Void
     @State private var hovering = false
 
+    private var queueTitle: String {
+        if let result = job.result, result.allOutputURLs.count > 1 {
+            return "\(result.allOutputURLs.count) images"
+        }
+        return job.result?.outputURL.lastPathComponent ?? job.displayName
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             ClipThumbnail(job: job)
             VStack(alignment: .leading, spacing: 3) {
-                Text(job.result?.outputURL.lastPathComponent ?? job.displayName)
+                Text(queueTitle)
                     .font(.body.weight(selected ? .semibold : .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -130,7 +137,7 @@ private struct QueueRow: View {
                 .font(.caption)
                 .foregroundStyle(Brand.warning)
         } else if job.state == .running || job.state == .verifying {
-            ProgressRow(progress: job.progress)
+            ProgressRow(progress: job.progress, keepsMoving: job.profileID == OutputID.animatedWebP)
         } else if let result = job.result {
             HStack(spacing: 0) {
                 Text(MediaFormat.bytes(result.bytes))

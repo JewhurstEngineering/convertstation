@@ -14,6 +14,9 @@ struct ClipThumbnail: View {
                 if job.state == .failed || job.state == .blockedByPermission {
                     Image(systemName: "exclamationmark.circle")
                         .foregroundStyle(Brand.danger)
+                } else if DocumentInspector.isDocument(job.sourceURL) {
+                    Image(systemName: "doc.text")
+                        .foregroundStyle(.secondary)
                 } else if let image = FrameStore.shared.thumbnails[job.sourceURL] {
                     Image(decorative: image, scale: 1)
                         .resizable()
@@ -27,7 +30,7 @@ struct ClipThumbnail: View {
                 .strokeBorder(Brand.hairline, lineWidth: 1)
         )
         .task(id: job.sourceURL) {
-            guard job.state != .blockedByPermission else { return }
+            guard job.state != .blockedByPermission, !DocumentInspector.isDocument(job.sourceURL) else { return }
             await FrameStore.shared.loadThumbnail(job.sourceURL)
         }
         .accessibilityHidden(true)
@@ -57,7 +60,7 @@ struct JobStatusView: View {
     var body: some View {
         switch job.state {
         case .running, .verifying:
-            ProgressRow(progress: job.progress)
+            ProgressRow(progress: job.progress, keepsMoving: job.profileID == OutputID.animatedWebP)
         case .queued:
             StatusPill(title: "Queued", foreground: .secondary, fill: Brand.fieldFill)
         case .completed:
@@ -81,26 +84,64 @@ struct JobStatusView: View {
 
 struct ProgressRow: View {
     var progress: Double?
+    /// Animated WebP keeps the moving bar, with the finished percent drawn on it.
+    var keepsMoving: Bool = false
+
+    private var percentLabel: String? {
+        guard let progress else { return nil }
+        return "\(Int((progress * 100).rounded()))%"
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let progress {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                    .tint(Brand.blue)
-                Text("\(Int(progress * 100))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, alignment: .trailing)
-            } else {
-                ProgressView()
-                    .progressViewStyle(.linear)
-                    .tint(Brand.blue)
+        ZStack {
+            if keepsMoving || progress == nil {
+                MovingProgressBar()
+            } else if let progress {
+                Capsule(style: .continuous)
+                    .fill(Brand.blue.opacity(0.18))
+                GeometryReader { geo in
+                    Capsule(style: .continuous)
+                        .fill(Brand.blue)
+                        .frame(width: max(0, geo.size.width * CGFloat(min(max(progress, 0), 1))))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            if let percentLabel {
+                Text(percentLabel)
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 1)
+                    .background(Brand.blue, in: Capsule())
             }
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Conversion progress")
-        .accessibilityValue(progress.map { "\(Int($0 * 100)) percent" } ?? "Starting")
+        .accessibilityValue(progress.map { "\(Int(($0 * 100).rounded())) percent" } ?? "Starting")
+    }
+}
+
+/// Full-width blue bar with a lighter band traveling across it.
+private struct MovingProgressBar: View {
+    @State private var traveling = false
+
+    var body: some View {
+        GeometryReader { geo in
+            Capsule(style: .continuous)
+                .fill(Brand.blue)
+            Capsule(style: .continuous)
+                .fill(.white.opacity(0.28))
+                .frame(width: geo.size.width * 0.38)
+                .offset(x: traveling ? geo.size.width : -geo.size.width * 0.38)
+        }
+        .clipShape(Capsule(style: .continuous))
+        .onAppear {
+            withAnimation(.linear(duration: 1.15).repeatForever(autoreverses: false)) {
+                traveling = true
+            }
+        }
     }
 }
 
