@@ -13,7 +13,7 @@ struct EmptyStateView: View {
                 .accessibilityLabel("ConvertStation")
             Text(model.dropTargeted ? "Release to add" : "Drop files to convert")
                 .font(.title2.weight(.semibold))
-            Text("Video, images, and audio stay on this Mac. The format list only shows what this file can become. Originals are never changed.")
+            Text("Video, images, audio, and documents stay on this Mac. The format list only shows what this file can become. Originals are never changed.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

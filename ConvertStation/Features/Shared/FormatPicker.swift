@@ -52,6 +52,7 @@ struct FormatPicker: View {
         case .animation: "play.rectangle"
         case .image: "photo"
         case .audio: "waveform"
+        case .document: "doc.text"
         case nil: "square.and.arrow.down"
         }
     }

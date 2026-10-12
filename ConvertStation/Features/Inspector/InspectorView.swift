@@ -1,5 +1,7 @@
 import AppKit
+import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Studio's middle column: file header, the preview stage, and the trim strip.
 struct StudioDetail: View {
@@ -8,10 +10,15 @@ struct StudioDetail: View {
     var body: some View {
         Group {
             if let job = model.selectedJob {
-                PlaybackScope(url: job.sourceURL) { playback in
-                    StudioCenter(model: model, job: job, playback: playback)
+                if job.descriptor?.kind == .document {
+                    DocumentStudio(model: model, job: job)
+                        .id(job.id)
+                } else {
+                    PlaybackScope(url: job.sourceURL) { playback in
+                        StudioCenter(model: model, job: job, playback: playback)
+                    }
+                    .id(job.id)
                 }
-                .id(job.id)
             } else {
                 ContentUnavailableView(
                     "No file selected",
@@ -21,6 +28,57 @@ struct StudioDetail: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct DocumentStudio: View {
+    @Bindable var model: AppModel
+    var job: ConversionJob
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(resultTitle(job))
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            DocumentStage(url: job.result?.outputURL ?? job.sourceURL)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minHeight: 280)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+    }
+}
+
+private struct DocumentStage: View {
+    var url: URL
+    @State private var text = ""
+
+    var body: some View {
+        Group {
+            if url.pathExtension.lowercased() == "pdf" {
+                PDFStage(url: url, pageCount: PDFDocument(url: url)?.pageCount ?? 1)
+            } else {
+                ScrollView {
+                    Text(text.isEmpty ? " " : text)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(24)
+                }
+                .background(Brand.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Brand.hairline, lineWidth: 1)
+                )
+                .task(id: url) {
+                    text = DocumentInspector.previewText(url)
+                }
+            }
+        }
     }
 }
 
@@ -67,7 +125,7 @@ private struct StudioCenter: View {
     private var header: some View {
         HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(job.result?.outputURL.lastPathComponent ?? job.displayName)
+                Text(resultTitle(job))
                     .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -92,18 +150,39 @@ private struct StudioCenter: View {
     @ViewBuilder
     private var stage: some View {
         if let result = job.result {
+            let pdf = job.descriptor?.detectedUTType == UTType.pdf.identifier
             switch mode {
             case .source:
-                VideoStage(playback: playback, aspect: aspect, badge: "Source")
+                if pdf {
+                    PDFStage(url: job.sourceURL, pageCount: job.descriptor?.pageCount ?? 1)
+                } else {
+                    VideoStage(playback: playback, aspect: aspect, badge: "Source")
+                }
             case .output:
-                OutputStage(url: result.outputURL, aspect: aspect, badge: outputBadge)
+                if result.allOutputURLs.count > 1 {
+                    StillStage(url: result.outputURL, badge: "Page 1 of \(result.allOutputURLs.count)")
+                } else {
+                    OutputStage(url: result.outputURL, aspect: aspect, badge: outputBadge)
+                }
             case .sideBySide:
                 HStack(spacing: 12) {
-                    VideoStage(playback: playback, aspect: aspect, badge: "Source", inset: 14)
-                    OutputStage(url: result.outputURL, aspect: aspect, badge: "Output", inset: 14)
+                    if pdf {
+                        PDFStage(url: job.sourceURL, pageCount: job.descriptor?.pageCount ?? 1)
+                    } else {
+                        VideoStage(playback: playback, aspect: aspect, badge: "Source", inset: 14)
+                    }
+                    if result.allOutputURLs.count > 1 {
+                        StillStage(url: result.outputURL, badge: "Page 1")
+                    } else {
+                        OutputStage(url: result.outputURL, aspect: aspect, badge: "Output", inset: 14)
+                    }
                 }
-                .onAppear { if !playback.playing { playback.toggle() } }
+                .onAppear {
+                    if !pdf, !playback.playing { playback.toggle() }
+                }
             }
+        } else if job.descriptor?.detectedUTType == UTType.pdf.identifier {
+            PDFStage(url: job.sourceURL, pageCount: job.descriptor?.pageCount ?? 1)
         } else if job.descriptor?.kind == .still {
             StillStage(url: job.sourceURL, badge: "Source")
         } else if job.descriptor?.kind == .audio {
@@ -143,10 +222,13 @@ private struct StudioCenter: View {
     private var metadataLine: String {
         if let result = job.result {
             var parts = [model.target(for: job)?.displayName ?? "Output"]
+            if result.allOutputURLs.count > 1 {
+                parts.append("\(result.allOutputURLs.count) images")
+            }
             if result.width > 0, result.height > 0 {
                 parts.append("\(result.width)×\(result.height)")
             }
-            if result.frameCount > 1 {
+            if result.allOutputURLs.count == 1, result.frameCount > 1 {
                 parts.append("\(result.frameCount) frames")
                 parts.append(result.loopForever ? "loops" : "plays once")
             }
@@ -274,6 +356,8 @@ struct SettingsForm: View {
             stillControls
         case .audio:
             audioControls
+        case .document:
+            EmptyView()
         case nil:
             EmptyView()
         }
@@ -806,6 +890,40 @@ private struct StillStage: View {
     }
 }
 
+private func resultTitle(_ job: ConversionJob) -> String {
+    if let result = job.result, result.allOutputURLs.count > 1 {
+        return "\(result.allOutputURLs.count) images"
+    }
+    return job.result?.outputURL.lastPathComponent ?? job.displayName
+}
+
+private struct PDFStage: View {
+    var url: URL
+    var pageCount: Int
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Brand.stage
+            if let image = Self.thumbnail(url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .padding(24)
+            }
+            StageBadge(text: pageCount > 1 ? "\(pageCount) pages" : "PDF")
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityLabel(pageCount > 1 ? "PDF, \(pageCount) pages" : "PDF")
+    }
+
+    private static func thumbnail(_ url: URL) -> NSImage? {
+        guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
+        let bounds = page.bounds(for: .mediaBox)
+        return page.thumbnail(of: CGSize(width: bounds.width * 2, height: bounds.height * 2), for: .mediaBox)
+    }
+}
+
 private struct AudioStage: View {
     var body: some View {
         ZStack {
@@ -837,17 +955,22 @@ struct ResultSummary: View {
             advice
             GroupedRows {
                 fact("Used", usedSummary)
-                if result.frameCount > 0 {
+                if result.allOutputURLs.count > 1 {
+                    GroupedRowDivider()
+                    fact("Images", "\(result.allOutputURLs.count)")
+                } else if result.frameCount > 0 {
                     GroupedRowDivider()
                     fact("Frames", "\(result.frameCount)")
                 }
                 GroupedRowDivider()
-                fact("Saved to", result.outputURL.deletingLastPathComponent().lastPathComponent)
+                fact("Saved to", result.allOutputURLs.count > 1
+                    ? "\(result.allOutputURLs.count) files"
+                    : result.outputURL.deletingLastPathComponent().lastPathComponent)
             }
             HStack(spacing: 8) {
                 Button("Quick Look") { model.quickLook(result.outputURL) }
                     .frame(maxWidth: .infinity)
-                Button("Show in Finder") { model.reveal(result.outputURL) }
+                Button("Show in Finder") { model.reveal(result.allOutputURLs) }
                     .frame(maxWidth: .infinity)
             }
             .controlSize(.large)
@@ -865,6 +988,7 @@ struct ResultSummary: View {
         case .image: "Image"
         case .audio: "Audio"
         case .video: "Video"
+        case .document: "Document"
         case nil: "Output"
         }
     }
