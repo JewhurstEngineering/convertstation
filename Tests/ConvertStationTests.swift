@@ -2,6 +2,7 @@ import CoreGraphics
 import CryptoKit
 import Foundation
 import ImageIO
+import PDFKit
 import Testing
 import UniformTypeIdentifiers
 @testable import ConvertStation
@@ -130,7 +131,7 @@ struct MockAudioProvider: ConversionProvider {
     #expect(max.framesPerSecond == 30)
     #expect(max.maxPixelWidth == nil)
     #expect(max.quality == 100)
-    #expect(max.compressionLevel == 6)
+    #expect(max.compressionLevel == 4)
     #expect(SizeText.lighterPreset(than: .maximum) == .highQuality)
 }
 
@@ -307,10 +308,12 @@ struct MockAudioProvider: ConversionProvider {
     let backwards = parser.consume(line: "out_time_us=500000", expectedDuration: 4)
     let later = parser.consume(line: "out_time=00:00:03.000000", expectedDuration: 4)
     let unknown = parser.consume(line: "frame=10", expectedDuration: 0)
+    let unavailable = parser.consume(line: "out_time_us=N/A", expectedDuration: 4)
     #expect(first == 0.25)
     #expect(backwards == 0.25)
     #expect(later == 0.75)
     #expect(unknown == nil)
+    #expect(unavailable == nil)
 }
 
 @Test func cancelStopsARunningProcess() async throws {
@@ -354,6 +357,7 @@ struct MockAudioProvider: ConversionProvider {
 
     let runner = ProcessRunner()
     let outputURL = destination.appendingPathComponent("baseline.webp")
+    let progress = ProgressMarks()
     let result = try await WebPConversion.convert(
         source: source,
         options: .balanced,
@@ -363,14 +367,19 @@ struct MockAudioProvider: ConversionProvider {
         runner: runner,
         resolvedDestination: outputURL,
         replacing: false
-    ) { _ in }
+    ) { fraction in
+        progress.add(fraction)
+    }
 
     let after = try Data(contentsOf: sourceURL)
     #expect(SHA256.hash(data: after) == digest)
     let info = try WebPHeaderParser.parse(file: result.outputURL)
+    let fractions = progress.fractions
+    #expect(fractions.count >= 2)
+    #expect((fractions.last ?? 0) > (fractions.first ?? 1))
     #expect(info.hasAnimation)
     #expect(info.loopCount == 0)
-    #expect(info.frameCount > 1)
+    #expect(info.frameCount >= 18)
     #expect(info.canvasWidth == 640)
     #expect(info.canvasHeight == 360)
     #expect(result.bytes > 0)
@@ -704,6 +713,194 @@ struct MockAudioProvider: ConversionProvider {
         let facts = try OutputChecker.inspect(url: webm, ffprobe: binaries.ffprobe)
         #expect(facts.videoCodec == "vp9")
         #expect(facts.audioCodec == "opus")
+    }
+}
+
+@Test func pdfPagesBecomeOneImageEach() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let source = directory.appendingPathComponent("report.pdf")
+    try writePDF(pageCount: 3, to: source)
+    let original = try Data(contentsOf: source)
+    let descriptor = try PDFInspector.inspect(url: source)
+    #expect(descriptor.pageCount == 3)
+    #expect(descriptor.kind == .still)
+    #expect(StillImageProvider().availableTargets(for: descriptor).contains { $0.id == OutputID.png })
+
+    let names = OutputPublisher.pageURLs(source: source, directory: directory, fileExtension: "png", pageCount: 3)
+        .map(\.lastPathComponent)
+    #expect(names == ["report-1.png", "report-2.png", "report-3.png"])
+    let single = OutputPublisher.pageURLs(
+        source: directory.appendingPathComponent("one.pdf"),
+        directory: directory,
+        fileExtension: "png",
+        pageCount: 1
+    )
+    #expect(single[0].lastPathComponent == "one.png")
+
+    for (format, ext, type) in [
+        (OutputID.png, "png", UTType.png.identifier),
+        (OutputID.jpeg, "jpg", UTType.jpeg.identifier),
+    ] {
+        let destinations = OutputPublisher.pageURLs(source: source, directory: directory, fileExtension: ext, pageCount: 3)
+        let request = ConversionRequest(
+            id: UUID(),
+            sourceURL: source,
+            targetFormatID: format,
+            options: .balanced,
+            destinationDirectory: directory,
+            collisionPolicy: .ask
+        )
+        let result = try await StillImageConversion.convert(
+            request: request,
+            source: descriptor,
+            destinations: destinations,
+            replacing: false
+        )
+        #expect(result.allOutputURLs.map(\.lastPathComponent) == destinations.map(\.lastPathComponent))
+        for url in result.allOutputURLs {
+            let opened = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+            #expect(CGImageSourceGetType(opened) as String? == type)
+            #expect(CGImageSourceCreateImageAtIndex(opened, 0, nil) != nil)
+        }
+    }
+    #expect(try Data(contentsOf: source) == original)
+
+    let onePage = directory.appendingPathComponent("one.pdf")
+    try writePDF(pageCount: 1, to: onePage)
+    let oneDescriptor = try PDFInspector.inspect(url: onePage)
+    let oneDestination = OutputPublisher.pageURLs(source: onePage, directory: directory, fileExtension: "png", pageCount: 1)
+    let oneResult = try await StillImageConversion.convert(
+        request: ConversionRequest(
+            id: UUID(),
+            sourceURL: onePage,
+            targetFormatID: OutputID.png,
+            options: .balanced,
+            destinationDirectory: directory,
+            collisionPolicy: .ask
+        ),
+        source: oneDescriptor,
+        destinations: oneDestination,
+        replacing: false
+    )
+    #expect(oneResult.allOutputURLs.map(\.lastPathComponent) == ["one.png"])
+    #expect(oneResult.siblingOutputURLs == nil)
+}
+
+private func writePDF(pageCount: Int, to url: URL) throws {
+    var mediaBox = CGRect(x: 0, y: 0, width: 200, height: 120)
+    guard let consumer = CGDataConsumer(url: url as CFURL),
+          let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+        throw ConversionError.unreadable("Couldn't write a test PDF.")
+    }
+    let colors = [
+        CGColor(red: 0.9, green: 0.1, blue: 0.1, alpha: 1),
+        CGColor(red: 0.1, green: 0.7, blue: 0.2, alpha: 1),
+        CGColor(red: 0.1, green: 0.2, blue: 0.9, alpha: 1),
+    ]
+    for index in 0..<pageCount {
+        context.beginPDFPage(nil)
+        context.setFillColor(colors[index % colors.count])
+        context.fill(mediaBox)
+        context.endPDFPage()
+    }
+    context.closePDF()
+}
+
+@Test @MainActor func documentsConvertBetweenMarkdownRichTextAndPDF() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let source = directory.appendingPathComponent("notes.md")
+    let original = "# Title\n\nHello **world**\n- One item\n"
+    try original.write(to: source, atomically: true, encoding: .utf8)
+    let descriptor = try DocumentInspector.inspect(url: source)
+    let ids = DocumentProvider().availableTargets(for: descriptor).map(\.id)
+    #expect(ids.contains(OutputID.rtf))
+    #expect(ids.contains(OutputID.pdfText))
+    #expect(ids.contains(OutputID.html))
+    #expect(!ids.contains(OutputID.markdown))
+
+    let rtf = try convertDocument(OutputID.rtf, source: descriptor, directory: directory)
+    let rich = try DocumentFile.load(rtf)
+    #expect(rich.string.contains("Title"))
+    #expect(rich.string.contains("world"))
+    #expect(rich.string.contains("One item"))
+
+    let pdf = try convertDocument(OutputID.pdfText, source: descriptor, directory: directory)
+    let document = try #require(PDFDocument(url: pdf))
+    #expect(document.pageCount > 0)
+    #expect(document.string?.contains("Title") == true)
+    #expect(document.string?.contains("world") == true)
+    #expect(pdfTextSitsAtTheTop(pdf))
+
+    let kept = MarkdownText.markdown(from: MarkdownText.render(original))
+    #expect(kept.contains("# Title"))
+    #expect(kept.contains("**world**"))
+    #expect(kept.contains("- One item"))
+    let fromRichText = MarkdownText.markdown(from: rich)
+    #expect(fromRichText.contains("Title"))
+    #expect(fromRichText.contains("world"))
+    #expect(try Data(contentsOf: source) == Data(original.utf8))
+
+    if DocumentFile.canWriteDocx {
+        let word = directory.appendingPathComponent("notes.docx")
+        try DocumentFile.write(rich, format: OutputID.docx, to: word)
+        let wordDescriptor = try DocumentInspector.inspect(url: word)
+        let markdown = try convertDocument(OutputID.markdown, source: wordDescriptor, directory: directory)
+        let text = try String(contentsOf: markdown, encoding: .utf8)
+        #expect(text.contains("Title"))
+        #expect(text.contains("world"))
+    }
+}
+
+private func pdfTextSitsAtTheTop(_ url: URL) -> Bool {
+    guard let document = PDFDocument(url: url),
+          let page = document.page(at: 0),
+          let text = page.string,
+          text.isEmpty == false else { return false }
+    let length = min(8, (text as NSString).length)
+    guard let selection = page.selection(for: NSRange(location: 0, length: length)) else { return false }
+    let line = selection.bounds(for: page)
+    return line.midY > page.bounds(for: .mediaBox).midY
+}
+
+private func convertDocument(_ id: String, source: SourceDescriptor, directory: URL) throws -> URL {
+    let target = try #require(DocumentProvider().availableTargets(for: source).first { $0.id == id })
+    let output = directory.appendingPathComponent("out-\(id.replacingOccurrences(of: ".", with: "-")).\(target.fileExtension)")
+    _ = try DocumentConversion.convert(
+        request: ConversionRequest(
+            id: UUID(),
+            sourceURL: source.url,
+            targetFormatID: id,
+            options: .balanced,
+            destinationDirectory: directory,
+            collisionPolicy: .ask
+        ),
+        source: source,
+        resolvedDestination: output,
+        replacing: false
+    )
+    return output
+}
+
+private final class ProgressMarks: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Double] = []
+
+    func add(_ value: Double) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    var fractions: [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
     }
 }
 
