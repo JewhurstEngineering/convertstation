@@ -295,10 +295,12 @@ struct WebPOptions: Codable, Equatable, Sendable {
     }
 
     var compressionLevel: Int {
+        // libwebp method 6 is about 16× slower than method 4 at 1080p and
+        // finishes at the same size. It also writes nothing until the last
+        // frame, so the progress bar sits at 0% for the whole encode.
         switch presetID {
         case .smallFile: 2
-        case .balanced, .custom: 4
-        case .highQuality, .maximum: 6
+        case .balanced, .custom, .highQuality, .maximum: 4
         }
     }
 }
@@ -313,6 +315,7 @@ enum MediaKind: String, Codable, Equatable, Sendable {
     case audio
     case still
     case animation
+    case document
 }
 
 enum OutputFamily: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -320,6 +323,7 @@ enum OutputFamily: String, Codable, CaseIterable, Identifiable, Sendable {
     case animation
     case image
     case audio
+    case document
 
     var id: String { rawValue }
 
@@ -329,6 +333,7 @@ enum OutputFamily: String, Codable, CaseIterable, Identifiable, Sendable {
         case .animation: "Animation"
         case .image: "Image"
         case .audio: "Audio"
+        case .document: "Document"
         }
     }
 }
@@ -379,6 +384,12 @@ enum OutputID {
     static let m4aALAC = "audio.m4a-alac"
     static let opus = "audio.opus"
     static let mp3 = "audio.mp3"
+    static let markdown = "document.md"
+    static let rtf = "document.rtf"
+    static let html = "document.html"
+    static let plainText = "document.txt"
+    static let pdfText = "document.pdf"
+    static let docx = "document.docx"
 }
 
 struct SourceDescriptor: Equatable, Sendable {
@@ -399,6 +410,7 @@ struct SourceDescriptor: Equatable, Sendable {
     var warnings: [String]
     var kind: MediaKind
     var audioCodecName: String?
+    var pageCount: Int
 
     init(
         url: URL,
@@ -417,7 +429,8 @@ struct SourceDescriptor: Equatable, Sendable {
         formatName: String?,
         warnings: [String],
         kind: MediaKind = .video,
-        audioCodecName: String? = nil
+        audioCodecName: String? = nil,
+        pageCount: Int = 1
     ) {
         self.url = url
         self.detectedUTType = detectedUTType
@@ -436,6 +449,7 @@ struct SourceDescriptor: Equatable, Sendable {
         self.warnings = warnings
         self.kind = kind
         self.audioCodecName = audioCodecName
+        self.pageCount = max(pageCount, 1)
     }
 
     var displayWidth: Int? {
@@ -457,7 +471,7 @@ extension SourceDescriptor: Codable {
     enum CodingKeys: String, CodingKey {
         case url, detectedUTType, durationSeconds, width, height, rotationDegrees
         case hasVideo, hasAudio, hasAlpha, isHDR, codecName, averageFrameRate
-        case fileSizeBytes, formatName, warnings, kind, audioCodecName
+        case fileSizeBytes, formatName, warnings, kind, audioCodecName, pageCount
     }
 
     init(from decoder: Decoder) throws {
@@ -478,6 +492,7 @@ extension SourceDescriptor: Codable {
         formatName = try container.decodeIfPresent(String.self, forKey: .formatName)
         warnings = try container.decode([String].self, forKey: .warnings)
         audioCodecName = try container.decodeIfPresent(String.self, forKey: .audioCodecName)
+        pageCount = max(try container.decodeIfPresent(Int.self, forKey: .pageCount) ?? 1, 1)
         if let kind = try container.decodeIfPresent(MediaKind.self, forKey: .kind) {
             self.kind = kind
         } else if hasVideo {
@@ -508,6 +523,7 @@ extension SourceDescriptor: Codable {
         try container.encode(warnings, forKey: .warnings)
         try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(audioCodecName, forKey: .audioCodecName)
+        try container.encode(pageCount, forKey: .pageCount)
     }
 }
 
@@ -547,8 +563,10 @@ struct ConversionRequest: Equatable, Sendable {
     var collisionPolicy: CollisionPolicy
 }
 
-struct ConversionResult: Codable, Equatable, Sendable {
+struct ConversionResult: Equatable, Sendable {
     var outputURL: URL
+    /// Later pages from one PDF. Missing on older saved jobs.
+    var siblingOutputURLs: [URL]? = nil
     var bytes: Int64
     var elapsedSeconds: Double
     var width: Int
@@ -556,6 +574,42 @@ struct ConversionResult: Codable, Equatable, Sendable {
     var frameCount: Int
     var loopForever: Bool
     var warnings: [String]
+
+    var allOutputURLs: [URL] {
+        [outputURL] + (siblingOutputURLs ?? [])
+    }
+}
+
+extension ConversionResult: Codable {
+    enum CodingKeys: String, CodingKey {
+        case outputURL, siblingOutputURLs, bytes, elapsedSeconds, width, height, frameCount, loopForever, warnings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outputURL = try container.decode(URL.self, forKey: .outputURL)
+        siblingOutputURLs = try container.decodeIfPresent([URL].self, forKey: .siblingOutputURLs)
+        bytes = try container.decode(Int64.self, forKey: .bytes)
+        elapsedSeconds = try container.decode(Double.self, forKey: .elapsedSeconds)
+        width = try container.decode(Int.self, forKey: .width)
+        height = try container.decode(Int.self, forKey: .height)
+        frameCount = try container.decode(Int.self, forKey: .frameCount)
+        loopForever = try container.decode(Bool.self, forKey: .loopForever)
+        warnings = try container.decode([String].self, forKey: .warnings)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(outputURL, forKey: .outputURL)
+        try container.encodeIfPresent(siblingOutputURLs, forKey: .siblingOutputURLs)
+        try container.encode(bytes, forKey: .bytes)
+        try container.encode(elapsedSeconds, forKey: .elapsedSeconds)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        try container.encode(frameCount, forKey: .frameCount)
+        try container.encode(loopForever, forKey: .loopForever)
+        try container.encode(warnings, forKey: .warnings)
+    }
 }
 
 struct ConversionJob: Identifiable, Equatable, Sendable {

@@ -1,5 +1,12 @@
 import Foundation
 
+enum PagePublishPlan: Equatable, Sendable {
+    case write(urls: [URL], replacing: Bool)
+    case confirmReplace(urls: [URL])
+    case skip
+    case ask(urls: [URL])
+}
+
 enum PublishPlan: Equatable, Sendable {
     case write(URL)
     case replace(URL)
@@ -12,13 +19,30 @@ enum OutputPublisher {
         directory.appendingPathComponent(fileName(for: source, extension: fileExtension))
     }
 
+    /// One file keeps the source name. Several pages are `name-1.png` through `name-6.png`.
+    static func pageURLs(source: URL, directory: URL, fileExtension: String, pageCount: Int) -> [URL] {
+        let count = max(pageCount, 1)
+        let base = sanitize(source.deletingPathExtension().lastPathComponent)
+        let ext = sanitizedExtension(fileExtension)
+        if count == 1 {
+            return [directory.appendingPathComponent("\(base).\(ext)")]
+        }
+        return (1...count).map { page in
+            directory.appendingPathComponent("\(base)-\(page).\(ext)")
+        }
+    }
+
     static func fileName(for source: URL, extension fileExtension: String = "webp") -> String {
         let base = sanitize(source.deletingPathExtension().lastPathComponent)
+        return base + "." + sanitizedExtension(fileExtension)
+    }
+
+    static func sanitizedExtension(_ fileExtension: String) -> String {
         let cleaned = fileExtension
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
             .lowercased()
-        let ext = cleaned.isEmpty ? "webp" : cleaned.filter { $0.isLetter || $0.isNumber }
-        return base + "." + (ext.isEmpty ? "webp" : ext)
+        let ext = cleaned.filter { $0.isLetter || $0.isNumber }
+        return ext.isEmpty ? "webp" : ext
     }
 
     static func sanitize(_ name: String) -> String {
@@ -42,6 +66,30 @@ enum OutputPublisher {
         let right = destination.standardizedFileURL.resolvingSymlinksInPath().path
         if left == right {
             throw ConversionError.samePathAsSource
+        }
+    }
+
+    static func planPages(
+        _ urls: [URL],
+        source: URL,
+        policy: CollisionPolicy,
+        fileExists: (URL) -> Bool
+    ) throws -> PagePublishPlan {
+        for url in urls {
+            try assertDistinct(source: source, destination: url)
+        }
+        guard urls.contains(where: fileExists) else {
+            return .write(urls: urls, replacing: false)
+        }
+        switch policy {
+        case .ask:
+            return .ask(urls: urls)
+        case .skip:
+            return .skip
+        case .replace:
+            return .confirmReplace(urls: urls)
+        case .keepBoth:
+            return .write(urls: urls.map { uniqueURL($0, fileExists: fileExists) }, replacing: false)
         }
     }
 
