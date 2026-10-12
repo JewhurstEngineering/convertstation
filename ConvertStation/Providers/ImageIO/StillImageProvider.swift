@@ -77,7 +77,9 @@ struct StillImageProvider: ConversionProvider {
 
     private static func notice(for id: String, source: SourceDescriptor) -> String {
         var parts: [String] = []
-        if source.kind == .video || source.kind == .animation {
+        if source.pageCount > 1 {
+            parts.append("Each of the \(source.pageCount) pages is saved as its own image.")
+        } else if source.kind == .video || source.kind == .animation {
             parts.append("Saves one frame from the start of the trim.")
         }
         switch id {
@@ -93,7 +95,7 @@ struct StillImageProvider: ConversionProvider {
             parts.append("This is one frame, not an animation.")
         case OutputID.heic:
             parts.append("HEIC support depends on this Mac.")
-        case OutputID.tiff:
+        case OutputID.tiff where source.pageCount <= 1:
             parts.append("TIFF is saved as a single page.")
         case OutputID.bmp:
             parts.append("BMP is usually uncompressed, so the file can get larger.")
@@ -111,45 +113,93 @@ enum StillImageConversion {
         resolvedDestination: URL,
         replacing: Bool
     ) async throws -> ConversionResult {
+        try await convert(
+            request: request,
+            source: source,
+            destinations: [resolvedDestination],
+            replacing: replacing
+        )
+    }
+
+    static func convert(
+        request: ConversionRequest,
+        source: SourceDescriptor,
+        destinations: [URL],
+        replacing: Bool
+    ) async throws -> ConversionResult {
         let provider = StillImageProvider()
         try provider.validate(request, source: source)
         guard let type = utType(for: request.targetFormatID) else {
             throw ConversionError.invalidOptions("That image format isn't available.")
         }
+        guard let first = destinations.first else {
+            throw ConversionError.destinationNotWritable
+        }
         let started = Date()
-        let loaded = try await loadImage(source: source, trimStart: request.options.trimStartSeconds)
-        let fitted = scale(loaded, maxEdge: request.stillOptions.maxEdge)
-        let image = request.targetFormatID == OutputID.jpeg ? flatten(fitted) : fitted
+        let images = try await loadImages(source: source, trimStart: request.options.trimStartSeconds)
+        guard images.count == destinations.count else {
+            throw ConversionError.validationFailed("Expected \(images.count) images and got \(destinations.count) names.")
+        }
         let staging = try FileManager.default.url(
             for: .itemReplacementDirectory,
             in: .userDomainMask,
-            appropriateFor: resolvedDestination.deletingLastPathComponent(),
+            appropriateFor: first.deletingLastPathComponent(),
             create: true
         )
-        let temporary = staging.appendingPathComponent("\(request.id.uuidString).partial.\(resolvedDestination.pathExtension)")
+        var published: [URL] = []
         do {
-            try write(image, to: temporary, type: type, quality: request.stillOptions.quality)
-            let checked = try reopen(temporary, expecting: type)
-            if let maxEdge = request.stillOptions.maxEdge, max(checked.width, checked.height) > maxEdge {
-                throw ConversionError.validationFailed("Output is larger than the \(maxEdge)px limit.")
+            var temporaries: [URL] = []
+            var checkedSize: (width: Int, height: Int)?
+            for (index, destination) in destinations.enumerated() {
+                var image = scale(images[index], maxEdge: request.stillOptions.maxEdge)
+                if request.targetFormatID == OutputID.jpeg {
+                    image = flatten(image)
+                }
+                let temporary = staging.appendingPathComponent("\(request.id.uuidString)-\(index).partial.\(destination.pathExtension)")
+                try write(image, to: temporary, type: type, quality: request.stillOptions.quality)
+                let checked = try reopen(temporary, expecting: type)
+                if let maxEdge = request.stillOptions.maxEdge, max(checked.width, checked.height) > maxEdge {
+                    throw ConversionError.validationFailed("Output is larger than the \(maxEdge)px limit.")
+                }
+                if checkedSize == nil {
+                    checkedSize = checked
+                }
+                temporaries.append(temporary)
             }
-            try OutputPublisher.publish(temporary: temporary, to: resolvedDestination, replacing: replacing)
+            for (temporary, destination) in zip(temporaries, destinations) {
+                try OutputPublisher.publish(temporary: temporary, to: destination, replacing: replacing)
+                published.append(destination)
+            }
             try? FileManager.default.removeItem(at: staging)
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: resolvedDestination.path)[.size] as? Int64) ?? 0
+            let bytes = published.reduce(Int64(0)) { total, url in
+                total + ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0)
+            }
+            let size = checkedSize ?? (0, 0)
+            var warnings: [String] = []
+            if request.targetFormatID == OutputID.jpeg && source.hasAlpha {
+                warnings.append("JPEG has no transparency. Transparent areas were filled with white.")
+            }
+            if published.count > 1 {
+                warnings.append("Saved \(published.count) images, one for each page.")
+            }
             return ConversionResult(
-                outputURL: resolvedDestination,
+                outputURL: published[0],
+                siblingOutputURLs: published.count > 1 ? Array(published.dropFirst()) : nil,
                 bytes: bytes,
                 elapsedSeconds: Date().timeIntervalSince(started),
-                width: checked.width,
-                height: checked.height,
-                frameCount: 1,
+                width: size.width,
+                height: size.height,
+                frameCount: published.count > 1 ? 0 : 1,
                 loopForever: false,
-                warnings: request.targetFormatID == OutputID.jpeg && source.hasAlpha
-                    ? ["JPEG has no transparency. Transparent areas were filled with white."]
-                    : []
+                warnings: warnings
             )
         } catch {
             try? FileManager.default.removeItem(at: staging)
+            if !replacing {
+                for url in published {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
             throw error
         }
     }
@@ -165,6 +215,17 @@ enum StillImageConversion {
         case OutputID.stillGIF: .gif
         default: nil
         }
+    }
+
+    private static func loadImages(source: SourceDescriptor, trimStart: Double) async throws -> [CGImage] {
+        if PDFInspector.isPDF(source.url) || source.detectedUTType == UTType.pdf.identifier {
+            let pages = try PDFInspector.renderPages(url: source.url)
+            guard pages.count == source.pageCount else {
+                throw ConversionError.unreadable("The PDF page count changed.")
+            }
+            return pages
+        }
+        return [try await loadImage(source: source, trimStart: trimStart)]
     }
 
     private static func loadImage(source: SourceDescriptor, trimStart: Double) async throws -> CGImage {
@@ -193,7 +254,7 @@ enum StillImageConversion {
         }
     }
 
-    private static func scale(_ image: CGImage, maxEdge: Int?) -> CGImage {
+    static func scale(_ image: CGImage, maxEdge: Int?) -> CGImage {
         guard let maxEdge, maxEdge > 0 else { return image }
         let longSide = max(image.width, image.height)
         guard longSide > maxEdge else { return image }
@@ -270,6 +331,9 @@ enum StillInspector {
         }
         let count = CGImageSourceGetCount(source)
         let type = (CGImageSourceGetType(source) as String?) ?? UTType.image.identifier
+        if type == UTType.pdf.identifier {
+            return nil
+        }
         let width = properties[kCGImagePropertyPixelWidth] as? Int
         let height = properties[kCGImagePropertyPixelHeight] as? Int
         let animated = count > 1 && (type == UTType.gif.identifier || type == UTType.webP.identifier)

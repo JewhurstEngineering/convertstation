@@ -40,6 +40,7 @@ targets:
     dependencies:
       - package: Sparkle
       - sdk: QuickLook.framework
+      - sdk: PDFKit.framework
     info:
       path: ConvertStation/Info.plist
       properties:
