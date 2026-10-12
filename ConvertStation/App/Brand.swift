@@ -48,6 +48,53 @@ private extension NSColor {
     }
 }
 
+/// Mark plus the name, with room between them. The window title is hidden so
+/// this is the only label in the toolbar.
+struct ToolbarLockup: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image("Mark")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+            Text("ConvertStation")
+                .font(.headline)
+        }
+        .padding(.trailing, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel("ConvertStation")
+    }
+}
+
+/// The system draws "ConvertStation" beside the toolbar item. Hide that so the
+/// lockup is the only title and the divider isn't pressed against the word.
+struct HiddenWindowTitle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content
+                .toolbar(removing: .title)
+                .background(WindowTitleVisibility())
+        } else {
+            content.background(WindowTitleVisibility())
+        }
+    }
+}
+
+private struct WindowTitleVisibility: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            view.window?.titleVisibility = .hidden
+        }
+    }
+}
+
 struct BrandLockup: View {
     @Environment(\.colorScheme) private var colorScheme
 

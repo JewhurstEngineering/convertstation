@@ -36,10 +36,7 @@ struct MainView: View {
         .background(Brand.canvas)
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Image("Mark")
-                    .resizable()
-                    .frame(width: 26, height: 26)
-                    .accessibilityLabel("ConvertStation")
+                ToolbarLockup()
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 if let job = model.selectedJob {
@@ -69,6 +66,7 @@ struct MainView: View {
             }
         }
         .toolbarBackground(.visible, for: .windowToolbar)
+        .modifier(HiddenWindowTitle())
         #if DEBUG
         .onAppear { DebugSnapshot.scheduleIfRequested() }
         #endif
