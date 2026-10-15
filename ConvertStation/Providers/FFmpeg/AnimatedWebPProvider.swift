@@ -80,30 +80,45 @@ enum WebPConversion {
             appropriateFor: destinationDirectory,
             create: true
         )
-        let plans = try FFmpegCommandBuilder.chunkedPlans(
+        let temporary = staging.appendingPathComponent("\(request.id.uuidString).partial.webp")
+        let plan = try FFmpegCommandBuilder.plan(
             request: request,
             source: source,
-            directory: staging,
+            temporaryOutput: temporary,
             ffmpeg: binaries.ffmpeg
         )
+        // One encode for the whole clip. Splitting it into one-second pieces
+        // re-decoded the file from the start for every piece, and a screen
+        // recording often has a second with no frames. That piece failed, and
+        // the queue started the whole file over.
+        var arguments = plan.arguments
+        if let filterIndex = arguments.firstIndex(of: "-vf"), arguments.indices.contains(filterIndex + 1) {
+            arguments[filterIndex + 1] += ",showinfo"
+        }
         let started = Date()
-        do {
-            for (index, plan) in plans.enumerated() {
-                let output = try await runner.run(executable: plan.executableURL, arguments: plan.arguments) { _ in }
-                if output.cancelled || Task.isCancelled {
-                    try? fileManager.removeItem(at: staging)
-                    throw ConversionError.cancelled
-                }
-                guard output.exitCode == 0 else {
-                    try? fileManager.removeItem(at: staging)
-                    throw ConversionError.processFailed(exitCode: output.exitCode, log: output.standardError)
-                }
-                onProgress(min(0.99, Double(index + 1) / Double(plans.count)))
+        let progress = LockedProgress()
+        let report: @Sendable (String) -> Void = { line in
+            if let fraction = progress.consume(line, expectedDuration: plan.expectedDuration) {
+                onProgress(fraction)
             }
-            let joined = staging.appendingPathComponent("\(request.id.uuidString).partial.webp")
-            try WebPAnimationJoiner.join(plans.map(\.temporaryOutput), to: joined)
-            let info = try WebPHeaderParser.parse(file: joined)
-            let bytes = (try? fileManager.attributesOfItem(atPath: joined.path)[.size] as? Int64) ?? 0
+        }
+        do {
+            let output = try await runner.run(
+                executable: plan.executableURL,
+                arguments: arguments,
+                onStandardError: report,
+                onLine: report
+            )
+            if output.cancelled || Task.isCancelled {
+                try? fileManager.removeItem(at: staging)
+                throw ConversionError.cancelled
+            }
+            guard output.exitCode == 0 else {
+                try? fileManager.removeItem(at: staging)
+                throw ConversionError.processFailed(exitCode: output.exitCode, log: output.standardError)
+            }
+            let info = try WebPHeaderParser.parse(file: temporary)
+            let bytes = (try? fileManager.attributesOfItem(atPath: temporary.path)[.size] as? Int64) ?? 0
             let interval = try options.effectiveInterval(sourceDuration: source.durationSeconds)
             try OutputValidator.validate(
                 info: info,
@@ -112,7 +127,7 @@ enum WebPConversion {
                 source: source,
                 interval: interval
             )
-            try OutputPublisher.publish(temporary: joined, to: resolvedDestination, replacing: replacing)
+            try OutputPublisher.publish(temporary: temporary, to: resolvedDestination, replacing: replacing)
             try? fileManager.removeItem(at: staging)
             let publishedSize = (try? fileManager.attributesOfItem(atPath: resolvedDestination.path)[.size] as? Int64) ?? 0
             return ConversionResult(
@@ -123,11 +138,22 @@ enum WebPConversion {
                 height: info.canvasHeight,
                 frameCount: info.frameCount,
                 loopForever: info.loopCount == 0,
-                warnings: plans.first?.warnings ?? []
+                warnings: plan.warnings
             )
         } catch {
             try? fileManager.removeItem(at: staging)
             throw error
         }
+    }
+}
+
+private final class LockedProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var parser = FFmpegProgressParser()
+
+    func consume(_ line: String, expectedDuration: Double) -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        return parser.consume(line: line, expectedDuration: expectedDuration)
     }
 }

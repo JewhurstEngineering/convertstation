@@ -9,6 +9,14 @@ struct CollisionPrompt: Identifiable, Equatable {
     var replaceOnly: Bool
 }
 
+enum ConversionQueue {
+    /// The next file this run should start. Jobs already attempted are skipped,
+    /// including one that just failed.
+    static func nextJobID(in jobs: [ConversionJob], skipping attempted: Set<UUID>) -> UUID? {
+        jobs.first { $0.canConvert && !attempted.contains($0.id) }?.id
+    }
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -551,8 +559,13 @@ final class AppModel {
     }
 
     private func runQueue() async {
+        var attempted: Set<UUID> = []
         while !Task.isCancelled && !stopQueue {
-            guard let id = jobs.first(where: \.canConvert)?.id else { return }
+            // A failure stays failed for this run. `canConvert` includes failed
+            // jobs so Convert can try them again, but picking the same one here
+            // made a bad file restart from 0% forever.
+            guard let id = ConversionQueue.nextJobID(in: jobs, skipping: attempted) else { return }
+            attempted.insert(id)
             await convert(id)
             runFinished += 1
         }

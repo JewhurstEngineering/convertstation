@@ -60,7 +60,7 @@ struct JobStatusView: View {
     var body: some View {
         switch job.state {
         case .running, .verifying:
-            ProgressRow(progress: job.progress, keepsMoving: job.profileID == OutputID.animatedWebP)
+            ProgressRow(progress: job.progress)
         case .queued:
             StatusPill(title: "Queued", foreground: .secondary, fill: Brand.fieldFill)
         case .completed:
@@ -84,7 +84,7 @@ struct JobStatusView: View {
 
 struct ProgressRow: View {
     var progress: Double?
-    /// Animated WebP keeps the moving bar, with the finished percent drawn on it.
+    /// Draws the traveling bar even after a percent is known.
     var keepsMoving: Bool = false
 
     private var percentLabel: String? {

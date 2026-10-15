@@ -199,6 +199,7 @@ final class ProcessRunner: @unchecked Sendable {
     func run(
         executable: URL,
         arguments: [String],
+        onStandardError: (@Sendable (String) -> Void)? = nil,
         onLine: @escaping @Sendable (String) -> Void
     ) async throws -> ProcessOutput {
         let process = Process()
@@ -213,7 +214,12 @@ final class ProcessRunner: @unchecked Sendable {
 
         let alreadyCancelled = store(process)
 
-        let stderrTask = Task.detached { Self.readPipe(stderr) }
+        let stderrTask = Task.detached {
+            if let onStandardError {
+                return await Self.readLines(stderr, onLine: onStandardError)
+            }
+            return Self.readPipe(stderr)
+        }
         let stdoutTask = Task.detached {
             do {
                 for try await line in stdout.fileHandleForReading.bytes.lines {
@@ -266,6 +272,27 @@ final class ProcessRunner: @unchecked Sendable {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let capped = data.count > 64_000 ? data.suffix(64_000) : data
         return String(data: capped, encoding: .utf8) ?? ""
+    }
+
+    /// Keeps the tail of stderr. Callers use the lines for progress, and the
+    /// stored text is what a failure can show.
+    private static func readLines(_ pipe: Pipe, onLine: @Sendable (String) -> Void) async -> String {
+        var data = Data()
+        do {
+            for try await line in pipe.fileHandleForReading.bytes.lines {
+                onLine(line)
+                if !line.contains("showinfo") {
+                    data.append(contentsOf: Array(line.utf8))
+                    data.append(0x0A)
+                    if data.count > 80_000 {
+                        data = Data(data.suffix(64_000))
+                    }
+                }
+            }
+        } catch {
+            // The pipe closes when the process exits or is killed.
+        }
+        return String(decoding: data.suffix(64_000), as: UTF8.self)
     }
 }
 

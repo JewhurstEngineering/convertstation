@@ -137,7 +137,7 @@ private struct QueueRow: View {
                 .font(.caption)
                 .foregroundStyle(Brand.warning)
         } else if job.state == .running || job.state == .verifying {
-            ProgressRow(progress: job.progress, keepsMoving: job.profileID == OutputID.animatedWebP)
+            ProgressRow(progress: job.progress)
         } else if let result = job.result {
             HStack(spacing: 0) {
                 Text(MediaFormat.bytes(result.bytes))

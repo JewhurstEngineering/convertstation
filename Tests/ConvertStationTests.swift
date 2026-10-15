@@ -316,6 +316,32 @@ struct MockAudioProvider: ConversionProvider {
     #expect(unavailable == nil)
 }
 
+@Test func showinfoTimeAdvancesProgressAndDoesNotRunBackwards() {
+    var parser = FFmpegProgressParser()
+    let line = "[Parsed_showinfo_2 @ 0x1] n: 30 pts_time:1.5 duration_time:0.0333333"
+    let first = parser.consume(line: line, expectedDuration: 10)
+    let backwards = parser.consume(line: "pts_time:0.25", expectedDuration: 10)
+    let later = parser.consume(line: "pts_time:8", expectedDuration: 10)
+    #expect(first == 0.15)
+    #expect(backwards == 0.15)
+    #expect(later == 0.8)
+}
+
+@Test func aFailedJobIsNotStartedAgainInTheSameRun() {
+    var failed = ConversionJob.new(url: URL(fileURLWithPath: "/tmp/a.mov"), duplicate: false)
+    failed.descriptor = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie")
+    failed.state = .failed
+    var ready = ConversionJob.new(url: URL(fileURLWithPath: "/tmp/b.mov"), duplicate: false)
+    ready.descriptor = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie")
+    ready.state = .ready
+
+    let first = ConversionQueue.nextJobID(in: [failed, ready], skipping: [])
+    #expect(first == failed.id)
+    let next = ConversionQueue.nextJobID(in: [failed, ready], skipping: [failed.id])
+    #expect(next == ready.id)
+    #expect(ConversionQueue.nextJobID(in: [failed], skipping: [failed.id]) == nil)
+}
+
 @Test func cancelStopsARunningProcess() async throws {
     let status = FFmpegLocator.locate()
     let ffmpeg = try #require(status.ffmpegURL)

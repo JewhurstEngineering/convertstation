@@ -20,38 +20,6 @@ enum FFmpegCommandBuilder {
         )
     }
 
-    /// One plan per second of the clip. libwebp writes the whole animation in
-    /// one step, so each finished second is the progress the UI can show.
-    static func chunkedPlans(
-        request: ConversionRequest,
-        source: SourceDescriptor,
-        directory: URL,
-        ffmpeg: URL
-    ) throws -> [ExecutionPlan] {
-        let interval = try request.options.effectiveInterval(sourceDuration: source.durationSeconds)
-        var offset = 0.0
-        var plans: [ExecutionPlan] = []
-        while offset < interval.duration - 0.001 {
-            let duration = min(1, interval.duration - offset)
-            let output = directory.appendingPathComponent(String(format: "chunk-%03d.webp", plans.count))
-            plans.append(try makePlan(
-                request: request,
-                source: source,
-                temporaryOutput: output,
-                ffmpeg: ffmpeg,
-                fastSeek: interval.start,
-                accurateSeek: offset,
-                duration: duration,
-                includeWarnings: plans.isEmpty
-            ))
-            offset += duration
-        }
-        if plans.isEmpty {
-            throw ConversionError.invalidOptions("Trim end has to be after the start.")
-        }
-        return plans
-    }
-
     private static func makePlan(
         request: ConversionRequest,
         source: SourceDescriptor,
@@ -139,14 +107,27 @@ struct FFmpegProgressParser {
             microseconds = value(after: "out_time_us=", in: trimmed)
         } else if trimmed.hasPrefix("out_time=") {
             microseconds = valueString(after: "out_time=", in: trimmed).flatMap(Self.clockMicroseconds)
+        } else if let seconds = Self.labeledTime("pts_time:", in: trimmed) {
+            let fraction = min(0.99, max(0, seconds / expectedDuration))
+            lastFraction = max(lastFraction, fraction)
+            return lastFraction
         } else {
             return nil
         }
         // libwebp_anim reports out_time_us=N/A until the whole animation is done.
+        // Frame timestamps from showinfo move while that encode is still running.
         guard let microseconds else { return nil }
         let fraction = min(0.99, max(0, (microseconds / 1_000_000) / expectedDuration))
         lastFraction = max(lastFraction, fraction)
         return lastFraction
+    }
+
+    /// `pts_time:1.25` inside an ffmpeg showinfo line.
+    private static func labeledTime(_ key: String, in line: String) -> Double? {
+        guard let range = line.range(of: key) else { return nil }
+        let token = line[range.upperBound...].prefix { $0.isNumber || $0 == "." || $0 == "-" }
+        guard !token.isEmpty else { return nil }
+        return Double(token)
     }
 
     private func value(after key: String, in line: String) -> Double? {
