@@ -19,8 +19,8 @@
 		<string>com.apple.coresymbolicationd</string>
 		<string>com.apple.dt.testmanagerd.runner</string>
 		<string>com.apple.testmanagerd</string>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+		<string>com.jewhurst.ConvertStation-spks</string>
+		<string>com.jewhurst.ConvertStation-spki</string>
 	</array>
 	<key>com.apple.security.temporary-exception.mach-register.global-name</key>
 	<array>
