@@ -143,9 +143,16 @@ enum PresetID: String, Codable, CaseIterable, Identifiable, Sendable {
 
 enum WebPLimits {
     static let fpsChoices = [5, 8, 10, 12, 15, 20, 24, 30]
-    static let widthChoices = [320, 480, 640, 800, 1024, 1280]
+    static let widthChoices = [320, 480, 640, 800, 1024, 1280, 1920, 2560, 3840, 7680]
     static let longClipSeconds = 30.0
     static let qualityRange = 0...100
+
+    /// Widths the menu can offer without asking the encoder to upscale.
+    /// A missing or unusable source width keeps the full ladder.
+    static func widthChoices(fitting sourceWidth: Int?) -> [Int] {
+        guard let sourceWidth, sourceWidth > 0 else { return widthChoices }
+        return widthChoices.filter { $0 <= sourceWidth }
+    }
 }
 
 struct WebPOptions: Codable, Equatable, Sendable {

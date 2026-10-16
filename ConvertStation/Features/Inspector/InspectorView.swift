@@ -553,7 +553,7 @@ struct SettingsForm: View {
     private var videoWidthPicker: some View {
         Picker("Max width", selection: videoWidth) {
             Text("Original").tag(Optional<Int>.none)
-            ForEach(WebPLimits.widthChoices, id: \.self) { width in
+            ForEach(offeredWidths(selected: job.videoOptions.maxPixelWidth), id: \.self) { width in
                 Text("\(width.formatted()) px").tag(Optional(width))
             }
         }
@@ -627,12 +627,22 @@ struct SettingsForm: View {
     private var widthPicker: some View {
         Picker("Max width", selection: width) {
             Text("Original").tag(Optional<Int>.none)
-            ForEach(WebPLimits.widthChoices, id: \.self) { width in
+            ForEach(offeredWidths(selected: job.options.maxPixelWidth), id: \.self) { width in
                 Text("\(width.formatted()) px").tag(Optional(width))
             }
         }
         .labelsHidden()
         .accessibilityLabel("Maximum width")
+    }
+
+    /// Standard widths up to the source, plus a saved width that no longer fits.
+    private func offeredWidths(selected: Int?) -> [Int] {
+        var choices = WebPLimits.widthChoices(fitting: job.descriptor?.displayWidth)
+        if let selected, selected > 0, !choices.contains(selected) {
+            choices.append(selected)
+            choices.sort()
+        }
+        return choices
     }
 
     private var qualityRow: some View {

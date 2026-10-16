@@ -109,6 +109,22 @@ struct MockAudioProvider: ConversionProvider {
     #expect(registry.targets(for: image).count == 1)
 }
 
+@Test func widthChoicesStopAtTheSourceWidth() {
+    let full = WebPLimits.widthChoices
+    #expect(full == [320, 480, 640, 800, 1024, 1280, 1920, 2560, 3840, 7680])
+
+    let hd = WebPLimits.widthChoices(fitting: 1920)
+    #expect(hd.contains(1920))
+    #expect(!hd.contains(2560))
+    #expect(hd.last == 1920)
+
+    let sd = WebPLimits.widthChoices(fitting: 640)
+    #expect(sd == [320, 480, 640])
+
+    #expect(WebPLimits.widthChoices(fitting: nil) == full)
+    #expect(WebPLimits.widthChoices(fitting: 0) == full)
+}
+
 @Test func presetNumbersMatchThePRD() {
     let small = WebPOptions.preset(.smallFile)
     #expect(small.framesPerSecond == 8)
