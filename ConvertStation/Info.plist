@@ -34,6 +34,8 @@
 	<string>Copyright © 2026 Jewhurst Engineering</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

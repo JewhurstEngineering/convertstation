@@ -58,6 +58,7 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 Jewhurst Engineering"
         LSApplicationCategoryType: public.app-category.utilities
         SUEnableAutomaticChecks: true
+        SUEnableInstallerLauncherService: true
         SUFeedURL: https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml
         SUPublicEDKey: 21krliPgcSC3TW0yVCj7jKGGfwWV7Om3OD76vn7+VXo=
     settings:
