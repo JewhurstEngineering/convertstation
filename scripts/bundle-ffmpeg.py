@@ -129,9 +129,12 @@ def main():
         return 0
 
     shutil.rmtree(helpers, ignore_errors=True)
-    shutil.rmtree(frameworks, ignore_errors=True)
     helpers.mkdir(parents=True, exist_ok=True)
     frameworks.mkdir(parents=True, exist_ok=True)
+    # Leave embedded .framework bundles (Sparkle) alone; only refresh FFmpeg dylibs.
+    for item in frameworks.iterdir():
+        if item.suffix == ".dylib":
+            item.unlink(missing_ok=True)
 
     copied = {}
     items = []
