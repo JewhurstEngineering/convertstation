@@ -23,6 +23,7 @@ struct ConvertStationApp: App {
     var body: some Scene {
         WindowGroup {
             MainView(model: model)
+                .preferredColorScheme(model.appearance.colorScheme)
                 .frame(minWidth: StudioLayout.windowMinimum, minHeight: 720)
                 .onAppear(perform: AppIcon.install)
         }
@@ -44,8 +45,8 @@ struct ConvertStationApp: App {
 
         Settings {
             SettingsView(model: model, checkForUpdates: { updates.checkForUpdates() })
-                .frame(width: 560)
-                .frame(minHeight: 720)
+                .preferredColorScheme(model.appearance.colorScheme)
+                .frame(width: 560, height: 640)
                 .onAppear(perform: AppIcon.install)
         }
     }

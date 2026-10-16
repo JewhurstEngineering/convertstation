@@ -7,6 +7,7 @@ final class PreferencesStore {
     private let bookmarkKey = "destinationBookmark"
     private let presetKey = "lastPreset"
     private let layoutKey = "layoutMode"
+    private let appearanceKey = "appearance"
     private let savedPresetsKey = "savedPresets"
 
     init(defaults: UserDefaults = .standard) {
@@ -40,6 +41,11 @@ final class PreferencesStore {
     var layoutMode: LayoutMode {
         get { defaults.string(forKey: layoutKey).flatMap(LayoutMode.init(rawValue:)) ?? .studio }
         set { defaults.set(newValue.rawValue, forKey: layoutKey) }
+    }
+
+    var appearance: AppearancePreference {
+        get { defaults.string(forKey: appearanceKey).flatMap(AppearancePreference.init(rawValue:)) ?? .system }
+        set { defaults.set(newValue.rawValue, forKey: appearanceKey) }
     }
 }
 

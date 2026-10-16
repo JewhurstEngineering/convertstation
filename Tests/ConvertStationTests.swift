@@ -135,6 +135,25 @@ struct MockAudioProvider: ConversionProvider {
     #expect(SizeText.lighterPreset(than: .maximum) == .highQuality)
 }
 
+@Test @MainActor func appearanceStartsOnSystemAndCanBeSaved() throws {
+    let name = "ConvertStationTests.appearance.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+
+    let store = PreferencesStore(defaults: defaults)
+    #expect(store.appearance == .system)
+    #expect(AppearancePreference.system.colorScheme == nil)
+    #expect(AppearancePreference.light.colorScheme == .light)
+    #expect(AppearancePreference.dark.colorScheme == .dark)
+
+    store.appearance = .dark
+    #expect(PreferencesStore(defaults: defaults).appearance == .dark)
+    store.appearance = .light
+    #expect(store.appearance == .light)
+    defaults.set("disco", forKey: "appearance")
+    #expect(PreferencesStore(defaults: defaults).appearance == .system)
+}
+
 @Test func customSettingsSnapBackToAMatchingPreset() {
     var options = WebPOptions.preset(.balanced)
     options.quality = 40

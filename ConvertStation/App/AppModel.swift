@@ -32,6 +32,7 @@ final class AppModel {
     var collisionPrompt: CollisionPrompt?
     var quickLook = QuickLookPresenter()
     var layoutMode: LayoutMode = .studio
+    var appearance: AppearancePreference = .system
     private(set) var savedPresets: [SavedPreset] = []
     /// Size of the current run and how many of its files have finished, for "Converting 1 of 2".
     private(set) var runTotal = 0
@@ -51,6 +52,8 @@ final class AppModel {
         collisionPolicy = preferences.collisionPolicy
         defaultPreset = preferences.lastPreset
         layoutMode = preferences.layoutMode
+        appearance = preferences.appearance
+        appearance.apply()
         savedPresets = preferences.savedPresets
         if let data = preferences.destinationBookmark, let url = try? fileAccess.resolveBookmark(data) {
             destinationURL = url
@@ -204,6 +207,12 @@ final class AppModel {
     func setLayoutMode(_ mode: LayoutMode) {
         layoutMode = mode
         preferences.layoutMode = mode
+    }
+
+    func setAppearance(_ preference: AppearancePreference) {
+        appearance = preference
+        preferences.appearance = preference
+        preference.apply()
     }
 
     func select(_ id: UUID?) {

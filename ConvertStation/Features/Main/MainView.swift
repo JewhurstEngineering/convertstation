@@ -65,6 +65,7 @@ struct MainView: View {
                 .help("Choose files to convert")
             }
         }
+        .toolbarBackground(Brand.canvas, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .modifier(HiddenWindowTitle())
         #if DEBUG
