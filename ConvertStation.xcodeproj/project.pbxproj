@@ -20,16 +20,19 @@
 		44C183B91608399B5AC90171 /* FileAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E407D86FEDB44257A85B277B /* FileAccessManager.swift */; };
 		4CF6B5718FCEF28FD632CC47 /* FFProbeParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBB0D1BDA4688ACCC2BE94B2 /* FFProbeParser.swift */; };
 		4DC81F1794B7FDE1AA4C924E /* malformed.mov in Resources */ = {isa = PBXBuildFile; fileRef = 8AE97F17EBDA3301F4FA354A /* malformed.mov */; };
+		4FFEB09D68C032E9FB2233E3 /* InstallCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C961CFB8BF84717E4F98C658 /* InstallCopy.swift */; };
 		50275CC90F0A120AB44770DC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89241F6C5300B9C499B06DA1 /* SettingsView.swift */; };
 		524E6BC83ACD07116D965918 /* SavedPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64217B79D07B731A80A0C363 /* SavedPreset.swift */; };
 		55656B96F70EE51DC9A1897F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 35E79D54F6286934824013A9 /* Assets.xcassets */; };
 		5E175D499AD6ECF6A6838BDF /* SizeEstimate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DB73D3DF150A6269F15D6B /* SizeEstimate.swift */; };
+		630BD3195B0CD331D8610D41 /* InstallHelper.xpc in CopyFiles */ = {isa = PBXBuildFile; fileRef = C898A95E116E33407426CAF7 /* InstallHelper.xpc */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		665073CFD5B8828DEFD5CA3B /* AppInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ADDDB7EF616AACA9CE90D4 /* AppInstall.swift */; };
 		673B78DD1CD47F17EC63EBFF /* silent.mov in Resources */ = {isa = PBXBuildFile; fileRef = CE4D3B7299059FFF96B38EE8 /* silent.mov */; };
 		6CE22A4C82C00B71C73BC210 /* OutputChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2461B2759C4180442F76F1B /* OutputChecker.swift */; };
 		6E13633BDEBC64F478042BD4 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7281AFD217C9B9E80293B003 /* Brand.swift */; };
 		7523BF2701C3D3A3DB2CF085 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3C14E5BB2003821701CC61 /* PreferencesStore.swift */; };
 		75800BDCA394AAE6326C5DED /* OutputPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC5D3958F07D1FC91324A056 /* OutputPublisher.swift */; };
+		76BF349EF2DB88CD9B04C71B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E46F391A515DA77E8B6173 /* main.swift */; };
 		77A2844A3BACA37DAF06AFDE /* WebPHeaderParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE652FC7CFDD153FB635F3E /* WebPHeaderParser.swift */; };
 		8525A15F2C610B62C73DDA8E /* tone.wav in Resources */ = {isa = PBXBuildFile; fileRef = EFC357FFBE3A709CE6092AFD /* tone.wav */; };
 		893BE44A459486C021D36363 /* AudioProfileProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDD38BF4217C094AFCF3769 /* AudioProfileProvider.swift */; };
@@ -55,6 +58,7 @@
 		DEF876749CF8AAD1AAD6D38B /* QuickLookPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD3BE576B5271392397CFBB /* QuickLookPresenter.swift */; };
 		E0FF2F36DD6C13ADFA4D98D9 /* ClipEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7720A50048FD669D1DF55322 /* ClipEditor.swift */; };
 		E881D3DC3F1B85CE10F9E37B /* sample.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 5AFB36991790B8B4226967A3 /* sample.jpg */; };
+		FBF4CC16362159988837B15E /* InstallCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C961CFB8BF84717E4F98C658 /* InstallCopy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,7 +69,27 @@
 			remoteGlobalIDString = 8D9D5150D409CE6F4973DE10;
 			remoteInfo = ConvertStation;
 		};
+		DE29EE6DA9E84C58B333DEEE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E3B502202739444D56D2E080 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2DCF74B84048F9EB1E9B472A;
+			remoteInfo = InstallHelper;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FE97D08ACB733BFC921C9540 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/XPCServices";
+			dstSubfolderSpec = 16;
+			files = (
+				630BD3195B0CD331D8610D41 /* InstallHelper.xpc in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0F45CD2D642D99C4EA087D86 /* DebugSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSnapshot.swift; sourceTree = "<group>"; };
@@ -79,6 +103,7 @@
 		2CD6E9BC6EBDB7CA4013B21E /* FrameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameStore.swift; sourceTree = "<group>"; };
 		311F12D36AAC89E31B0CD493 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		35E79D54F6286934824013A9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3A9254AF3039CB5F4DBDE564 /* InstallHelper.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = InstallHelper.entitlements; sourceTree = "<group>"; };
 		4745A0186F475A6306B09E38 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		4DE652FC7CFDD153FB635F3E /* WebPHeaderParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPHeaderParser.swift; sourceTree = "<group>"; };
 		4FDD38BF4217C094AFCF3769 /* AudioProfileProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProfileProvider.swift; sourceTree = "<group>"; };
@@ -94,6 +119,7 @@
 		703805C3BD09D7490AD8CD65 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		717F67F696571D6FC5EF516E /* ConvertStation.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ConvertStation.entitlements; sourceTree = "<group>"; };
 		7281AFD217C9B9E80293B003 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
+		74E46F391A515DA77E8B6173 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		7720A50048FD669D1DF55322 /* ClipEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipEditor.swift; sourceTree = "<group>"; };
 		7B3D82F509A156341FE8206F /* ConvertStation-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ConvertStation-Release.entitlements"; sourceTree = "<group>"; };
 		8205ED10F7E2BCFF9EF45852 /* CapabilityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityRegistry.swift; sourceTree = "<group>"; };
@@ -110,12 +136,15 @@
 		B94ECE143FC6E9F684EC5269 /* PDFKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PDFKit.framework; path = System/Library/Frameworks/PDFKit.framework; sourceTree = SDKROOT; };
 		B9ADDDB7EF616AACA9CE90D4 /* AppInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInstall.swift; sourceTree = "<group>"; };
 		C568683FB2AEDB314F8402D5 /* AnimatedWebPProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedWebPProvider.swift; sourceTree = "<group>"; };
+		C898A95E116E33407426CAF7 /* InstallHelper.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = InstallHelper.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 		C92D2E774BF9159B008E0BBF /* Domain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Domain.swift; sourceTree = "<group>"; };
+		C961CFB8BF84717E4F98C658 /* InstallCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallCopy.swift; sourceTree = "<group>"; };
 		CBB0D1BDA4688ACCC2BE94B2 /* FFProbeParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFProbeParser.swift; sourceTree = "<group>"; };
 		CE4D3B7299059FFF96B38EE8 /* silent.mov */ = {isa = PBXFileReference; lastKnownFileType = video.quicktime; path = silent.mov; sourceTree = "<group>"; };
 		D2461B2759C4180442F76F1B /* OutputChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutputChecker.swift; sourceTree = "<group>"; };
 		D24B96168DEDF3497A893EAF /* StillImageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StillImageProvider.swift; sourceTree = "<group>"; };
 		D87CDB709500E9727D9BD1EB /* FFmpegSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFmpegSupport.swift; sourceTree = "<group>"; };
+		DC38E30A70F1EDC001BED9F3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E407D86FEDB44257A85B277B /* FileAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAccessManager.swift; sourceTree = "<group>"; };
 		EFC357FFBE3A709CE6092AFD /* tone.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = tone.wav; sourceTree = "<group>"; };
 		F8A57A7A04A220BA1684AFB2 /* ConvertStation.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ConvertStation.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -160,6 +189,7 @@
 				4745A0186F475A6306B09E38 /* AppModel.swift */,
 				7281AFD217C9B9E80293B003 /* Brand.swift */,
 				69CF886CDACCC3D2CE262D0F /* ConvertStationApp.swift */,
+				C961CFB8BF84717E4F98C658 /* InstallCopy.swift */,
 				9F3C14E5BB2003821701CC61 /* PreferencesStore.swift */,
 			);
 			path = App;
@@ -290,6 +320,7 @@
 			children = (
 				22F765A962D7F576CF6AE6F7 /* ConvertStation */,
 				AA879E1FE600A55BE65A09A5 /* Fixtures */,
+				A5E270CCC87A031AD91A7B7D /* InstallHelper */,
 				7FA4FF5743DB209E2C7DFAC2 /* Resources */,
 				4D766D50489B335AA1B49C27 /* Tests */,
 				6D2101C17237AE37F0318031 /* Frameworks */,
@@ -306,6 +337,16 @@
 				CBB00561EBF68903EA8EC5F3 /* OutputManagement */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		A5E270CCC87A031AD91A7B7D /* InstallHelper */ = {
+			isa = PBXGroup;
+			children = (
+				DC38E30A70F1EDC001BED9F3 /* Info.plist */,
+				3A9254AF3039CB5F4DBDE564 /* InstallHelper.entitlements */,
+				74E46F391A515DA77E8B6173 /* main.swift */,
+			);
+			path = InstallHelper;
 			sourceTree = "<group>";
 		};
 		AA879E1FE600A55BE65A09A5 /* Fixtures */ = {
@@ -334,6 +375,7 @@
 			children = (
 				F8A57A7A04A220BA1684AFB2 /* ConvertStation.app */,
 				292165AA276B2E5F187685AC /* ConvertStationTests.xctest */,
+				C898A95E116E33407426CAF7 /* InstallHelper.xpc */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -383,6 +425,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2DCF74B84048F9EB1E9B472A /* InstallHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D4F345E58D2E19481C25ECA2 /* Build configuration list for PBXNativeTarget "InstallHelper" */;
+			buildPhases = (
+				DE79B955C68EF013303A694A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstallHelper;
+			packageProductDependencies = (
+			);
+			productName = InstallHelper;
+			productReference = C898A95E116E33407426CAF7 /* InstallHelper.xpc */;
+			productType = "com.apple.product-type.xpc-service";
+		};
 		606EF76D3ADDCD84331EBBF4 /* ConvertStationTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = EEBF5FC8D1274A850A5B5F6C /* Build configuration list for PBXNativeTarget "ConvertStationTests" */;
@@ -409,12 +468,14 @@
 			buildPhases = (
 				51CF1BB68FF5649B51F1D05D /* Sources */,
 				7F3F77661D1ECFB7DFADB453 /* Resources */,
+				FE97D08ACB733BFC921C9540 /* CopyFiles */,
 				91ADAD6125DA204120A7BC95 /* Frameworks */,
 				29927C8B722E66CA1F13E06F /* Bundle FFmpeg */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B04FFA0FD35CA6D07825BFAD /* PBXTargetDependency */,
 			);
 			name = ConvertStation;
 			packageProductDependencies = (
@@ -433,6 +494,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					2DCF74B84048F9EB1E9B472A = {
+						ProvisioningStyle = Manual;
+					};
 					606EF76D3ADDCD84331EBBF4 = {
 						ProvisioningStyle = Manual;
 					};
@@ -459,6 +523,7 @@
 			projectRoot = "";
 			targets = (
 				8D9D5150D409CE6F4973DE10 /* ConvertStation */,
+				2DCF74B84048F9EB1E9B472A /* InstallHelper */,
 				606EF76D3ADDCD84331EBBF4 /* ConvertStationTests */,
 			);
 		};
@@ -556,6 +621,7 @@
 				D8332F7C59A28ED8C1EF020A /* FormatPicker.swift in Sources */,
 				B358ED51374A79927CFC3932 /* FrameStore.swift in Sources */,
 				D638CF5E32EF54C6749C8303 /* InspectorView.swift in Sources */,
+				4FFEB09D68C032E9FB2233E3 /* InstallCopy.swift in Sources */,
 				C7E7867EA6387B8A83C7AB9A /* MainView.swift in Sources */,
 				275AE6146242A2F49F8E09B4 /* MarkdownText.swift in Sources */,
 				6CE22A4C82C00B71C73BC210 /* OutputChecker.swift in Sources */,
@@ -582,6 +648,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DE79B955C68EF013303A694A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FBF4CC16362159988837B15E /* InstallCopy.swift in Sources */,
+				76BF349EF2DB88CD9B04C71B /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -589,6 +664,11 @@
 			isa = PBXTargetDependency;
 			target = 8D9D5150D409CE6F4973DE10 /* ConvertStation */;
 			targetProxy = 2F03AC03147921A9E5B7E392 /* PBXContainerItemProxy */;
+		};
+		B04FFA0FD35CA6D07825BFAD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2DCF74B84048F9EB1E9B472A /* InstallHelper */;
+			targetProxy = DE29EE6DA9E84C58B333DEEE /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -607,6 +687,28 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jewhurst.ConvertStationTests;
 				SDKROOT = macosx;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ConvertStation.app/Contents/MacOS/ConvertStation";
+			};
+			name = Release;
+		};
+		542046A145EC284B919FD3D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = InstallHelper/InstallHelper.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InstallHelper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jewhurst.ConvertStation.InstallHelper;
+				PRODUCT_NAME = InstallHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
 			};
 			name = Release;
 		};
@@ -805,6 +907,28 @@
 			};
 			name = Release;
 		};
+		D93066B6BF7CDEB7FC9178DD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = InstallHelper/InstallHelper.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InstallHelper/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jewhurst.ConvertStation.InstallHelper;
+				PRODUCT_NAME = InstallHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -822,6 +946,15 @@
 			buildConfigurations = (
 				901D7D7539FB45D63A0F5809 /* Debug */,
 				94FC0E37CF5DCA8BB72F1862 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D4F345E58D2E19481C25ECA2 /* Build configuration list for PBXNativeTarget "InstallHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D93066B6BF7CDEB7FC9178DD /* Debug */,
+				542046A145EC284B919FD3D2 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

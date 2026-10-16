@@ -41,6 +41,9 @@ targets:
       - package: Sparkle
       - sdk: QuickLook.framework
       - sdk: PDFKit.framework
+      - target: InstallHelper
+        embed: true
+        codeSign: true
     info:
       path: ConvertStation/Info.plist
       properties:
@@ -80,6 +83,25 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           /usr/bin/python3 "${SRCROOT}/scripts/bundle-ffmpeg.py" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app"
+  InstallHelper:
+    type: xpc-service
+    platform: macOS
+    sources:
+      - path: InstallHelper
+      - path: ConvertStation/App/InstallCopy.swift
+    info:
+      path: InstallHelper/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jewhurst.ConvertStation.InstallHelper
+        PRODUCT_NAME: InstallHelper
+        GENERATE_INFOPLIST_FILE: false
+        MARKETING_VERSION: "0.1.1"
+        CURRENT_PROJECT_VERSION: "2"
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+        CODE_SIGN_ENTITLEMENTS: InstallHelper/InstallHelper.entitlements
+        SKIP_INSTALL: YES
   ConvertStationTests:
     type: bundle.unit-test
     platform: macOS

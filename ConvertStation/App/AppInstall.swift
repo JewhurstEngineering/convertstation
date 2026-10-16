@@ -23,32 +23,43 @@ enum AppInstall {
     }
 
     /// Copies the running bundle into `/Applications/ConvertStation.app`.
-    /// Launch Services treats that path as the installed app.
-    static func copyRunningAppToApplications() throws -> URL {
-        let source = Bundle.main.bundleURL
+    /// The copy is done by an unsandboxed helper. A copy made by this app is
+    /// tagged as sandbox data, and macOS then refuses to open it.
+    static func copyRunningAppToApplications() async throws -> URL {
+        let source = Bundle.main.bundleURL.resolvingSymlinksInPath()
         let destination = installedAppURL
         guard source.standardizedFileURL != destination.standardizedFileURL else {
             registerLaunchServices(at: destination)
             return destination
         }
-
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-
-        do {
-            try FileManager.default.copyItem(at: source, to: destination)
-        } catch {
-            throw NSError(
-                domain: "AppInstall",
-                code: 1,
-                userInfo: [
-                    NSLocalizedDescriptionKey: "Copy to Applications failed. \(error.localizedDescription)"
-                ]
-            )
-        }
+        try await install(from: source.path, to: destination.path)
         registerLaunchServices(at: destination)
         return destination
+    }
+
+    private static func install(from sourcePath: String, to destinationPath: String) async throws {
+        let connection = NSXPCConnection(serviceName: InstallCopy.serviceName)
+        connection.remoteObjectInterface = NSXPCInterface(with: InstallHelperProtocol.self)
+        connection.resume()
+        defer { connection.invalidate() }
+
+        let once = OnceResume()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+                once.resume(continuation, .failure(error))
+            } as? InstallHelperProtocol
+            guard let proxy else {
+                once.resume(continuation, .failure(InstallCopyError("ConvertStation couldn't start the installer.")))
+                return
+            }
+            proxy.install(from: sourcePath, to: destinationPath) { message in
+                if let message, !message.isEmpty {
+                    once.resume(continuation, .failure(InstallCopyError(message)))
+                } else {
+                    once.resume(continuation, .success(()))
+                }
+            }
+        }
     }
 
     static func revealInstalledApp() {
@@ -74,7 +85,6 @@ enum AppInstall {
 
     private static func registerLaunchServices(at appURL: URL) {
         let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-        _ = run("/usr/bin/xattr", ["-cr", appURL.path])
         _ = run(lsregister, ["-f", appURL.path])
     }
 
@@ -92,5 +102,19 @@ enum AppInstall {
         } catch {
             return -1
         }
+    }
+}
+
+private final class OnceResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func resume(_ continuation: CheckedContinuation<Void, Error>, _ result: Result<Void, Error>) {
+        lock.lock()
+        let shouldResume = !resumed
+        resumed = true
+        lock.unlock()
+        guard shouldResume else { return }
+        continuation.resume(with: result)
     }
 }

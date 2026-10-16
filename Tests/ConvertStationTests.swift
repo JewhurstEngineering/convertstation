@@ -455,6 +455,56 @@ struct MockAudioProvider: ConversionProvider {
     #expect(!AppInstall.isRunningFromApplications)
 }
 
+@Test func installerOnlyAcceptsConvertStationDestinations() {
+    #expect(InstallCopy.isAllowedDestination("/Applications/ConvertStation.app"))
+    #expect(!InstallCopy.isAllowedDestination("/Applications/Other.app"))
+    #expect(!InstallCopy.isAllowedDestination("/usr/local/ConvertStation.app"))
+    #expect(InstallCopy.isAllowedDestination("/private/tmp/ConvertStation.app"))
+    let temporary = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ConvertStation.app").path
+    #expect(InstallCopy.isAllowedDestination(temporary))
+}
+
+@Test func installHelperCopiesOutsideTheSandbox() async throws {
+    let source = Bundle.main.bundleURL
+    // /private/tmp, not /tmp. Inside the sandbox /tmp points at the container,
+    // and the helper is not allowed to write there.
+    let folder = "/private/tmp/convertstation-install-\(UUID().uuidString)"
+    let destination = URL(fileURLWithPath: folder, isDirectory: true)
+        .appendingPathComponent("ConvertStation.app")
+    defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: folder, isDirectory: true)) }
+
+    let connection = NSXPCConnection(serviceName: InstallCopy.serviceName)
+    connection.remoteObjectInterface = NSXPCInterface(with: InstallHelperProtocol.self)
+    connection.resume()
+    defer { connection.invalidate() }
+    let gate = InstallReplyOnce()
+    let message: String? = try await withCheckedThrowingContinuation { continuation in
+        let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+            gate.resume(continuation, .failure(error))
+        } as? InstallHelperProtocol
+        guard let proxy else {
+            gate.resume(continuation, .success("missing helper"))
+            return
+        }
+        proxy.install(from: source.path, to: destination.path) { message in
+            gate.resume(continuation, .success(message))
+        }
+    }
+    #expect(message == nil)
+    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Contents/MacOS/ConvertStation").path))
+    let assess = Process()
+    assess.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
+    assess.arguments = ["--assess", "--type", "execute", "-vv", destination.path]
+    let pipe = Pipe()
+    assess.standardError = pipe
+    assess.standardOutput = pipe
+    try assess.run()
+    assess.waitUntilExit()
+    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    #expect(!output.contains("AppSandbox"))
+}
+
 @Test func sparkleFeedPointsAtGitHubAppcast() {
     let url = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
     #expect(url == "https://github.com/JewhurstEngineering/convertstation/releases/latest/download/appcast.xml")
@@ -990,6 +1040,20 @@ private func makeJPEG(width: Int, height: Int) throws -> Data {
     #expect(SizeText.lighterPreset(than: .smallFile) == nil)
     #expect(SizeText.change(0.34) == "+34%")
     #expect(SizeText.change(-0.55) == "\u{2212}55%")
+}
+
+private final class InstallReplyOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func resume(_ continuation: CheckedContinuation<String?, Error>, _ result: Result<String?, Error>) {
+        lock.lock()
+        let shouldResume = !resumed
+        resumed = true
+        lock.unlock()
+        guard shouldResume else { return }
+        continuation.resume(with: result)
+    }
 }
 
 private func sampleSource(hasVideo: Bool, hasAudio: Bool, type: String, kind: MediaKind? = nil) -> SourceDescriptor {

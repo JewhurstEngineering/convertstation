@@ -78,6 +78,12 @@ for library in "$FRAMEWORKS"/*.dylib; do
 done
 unsetopt null_glob
 
+if [[ -d "$APP/Contents/XPCServices/InstallHelper.xpc" ]]; then
+  # No sandbox entitlement. This helper is what copies the app into
+  # /Applications; a sandboxed copy cannot be launched.
+  sign_item "$APP/Contents/XPCServices/InstallHelper.xpc"
+fi
+
 HELPER_ENTITLEMENTS="$ROOT/ConvertStation/Helper.entitlements"
 for name in ffmpeg ffprobe; do
   tool="$APP/Contents/Helpers/$name"
