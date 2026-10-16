@@ -338,7 +338,7 @@ struct SettingsView: View {
         case .highQuality:
             "20 fps, 1280 px wide, quality 85. Sharper, and the files are larger."
         case .maximum:
-            "30 fps, original width, quality 100. The best this format can do, and the largest files."
+            "Original frame rate, original width, quality 100. The best this format can do, and the largest files."
         case .custom:
             "Keeps the frame rate, width, and quality from the last file you edited."
         }

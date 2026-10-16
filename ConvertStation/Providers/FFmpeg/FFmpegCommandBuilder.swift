@@ -33,8 +33,8 @@ enum FFmpegCommandBuilder {
         let resolved = request.options.resolvedFPS(sourceFPS: source.averageFrameRate)
         var warnings: [String] = []
         if includeWarnings {
-            if resolved.clamped {
-                warnings.append("Frame rate was lowered to \(resolved.fps) fps so it doesn't exceed the source.")
+            if resolved.clamped, let fps = resolved.fps {
+                warnings.append("Frame rate was lowered to \(fps) fps so it doesn't exceed the source.")
             }
             if source.hasAudio {
                 warnings.append("Audio will be dropped. Animated WebP has no audio.")
@@ -81,14 +81,17 @@ enum FFmpegCommandBuilder {
         )
     }
 
-    static func filter(fps: Int, maxPixelWidth: Int?) -> String {
+    static func filter(fps: Int?, maxPixelWidth: Int?) -> String {
         let scale: String
         if let maxPixelWidth {
             scale = "scale='trunc(min(\(maxPixelWidth),iw)/2)*2':-2:flags=lanczos"
         } else {
             scale = "scale='trunc(iw/2)*2':-2:flags=lanczos"
         }
-        return "fps=\(fps),\(scale),setsar=1"
+        if let fps {
+            return "fps=\(fps),\(scale),setsar=1"
+        }
+        return "\(scale),setsar=1"
     }
 
     private static func format(_ value: Double) -> String {

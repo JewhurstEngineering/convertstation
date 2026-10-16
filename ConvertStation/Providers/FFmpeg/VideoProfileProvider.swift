@@ -158,8 +158,8 @@ struct VideoProfileProvider: ConversionProvider {
         let interval = try request.options.effectiveInterval(sourceDuration: source.durationSeconds)
         let resolved = request.options.resolvedFPS(sourceFPS: source.averageFrameRate)
         var warnings = ["Audio is dropped. GIF is limited to a color palette, so gradients can band."]
-        if resolved.clamped {
-            warnings.append("Frame rate was lowered to \(resolved.fps) fps so it doesn't exceed the source.")
+        if resolved.clamped, let fps = resolved.fps {
+            warnings.append("Frame rate was lowered to \(fps) fps so it doesn't exceed the source.")
         }
         if !request.options.allowLongClip,
            let duration = source.durationSeconds,
@@ -275,8 +275,8 @@ enum ProfileConversion {
             )
         case OutputID.gifAnimated:
             let interval = try request.options.effectiveInterval(sourceDuration: source.durationSeconds)
-            let fps = request.options.resolvedFPS(sourceFPS: source.averageFrameRate).fps
-            let minimum = interval.duration * Double(fps) >= 2 ? 2 : nil
+            let fps = request.options.playbackFPS(sourceFPS: source.averageFrameRate)
+            let minimum = interval.duration * fps >= 2 ? 2 : nil
             var media = try OutputChecker.require(
                 facts,
                 videoCodec: "gif",

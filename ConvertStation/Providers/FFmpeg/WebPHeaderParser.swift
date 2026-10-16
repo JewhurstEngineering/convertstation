@@ -184,8 +184,8 @@ enum OutputValidator {
         if let sourceWidth = source.displayWidth, info.canvasWidth > sourceWidth {
             throw ConversionError.validationFailed("Output was upscaled, which this preset does not do.")
         }
-        let fps = options.resolvedFPS(sourceFPS: source.averageFrameRate).fps
-        if interval.duration * Double(fps) >= 2, info.frameCount < 2 {
+        let fps = options.playbackFPS(sourceFPS: source.averageFrameRate)
+        if interval.duration * fps >= 2, info.frameCount < 2 {
             throw ConversionError.validationFailed("Output did not contain an animation.")
         }
         if options.loopForever, info.loopCount != 0 {

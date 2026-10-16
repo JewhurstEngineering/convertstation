@@ -125,6 +125,57 @@ struct MockAudioProvider: ConversionProvider {
     #expect(WebPLimits.widthChoices(fitting: 0) == full)
 }
 
+@Test func frameRatesStopAtTheSourceRate() {
+    let full = WebPLimits.fpsChoices
+    #expect(full == [5, 8, 10, 12, 15, 20, 24, 30, 48, 50, 60, 120])
+
+    let sixty = WebPLimits.fpsChoices(fitting: 59.94)
+    #expect(sixty.contains(60))
+    #expect(!sixty.contains(120))
+    #expect(sixty.last == 60)
+
+    let high = WebPLimits.fpsChoices(fitting: 119.88)
+    #expect(high.contains(120))
+    #expect(high.last == 120)
+
+    let film = WebPLimits.fpsChoices(fitting: 23.976)
+    #expect(film.last == 24)
+
+    let slow = WebPLimits.fpsChoices(fitting: 24)
+    #expect(slow == [5, 8, 10, 12, 15, 20, 24])
+
+    #expect(WebPLimits.fpsChoices(fitting: nil) == full)
+}
+
+@Test func originalFrameRateSkipsResampling() throws {
+    let options = WebPOptions.preset(.maximum)
+    let resolved = options.resolvedFPS(sourceFPS: 59.94)
+    #expect(resolved.fps == nil)
+    #expect(!resolved.clamped)
+    #expect(options.playbackFPS(sourceFPS: 59.94) == 59.94)
+
+    var source = sampleSource(hasVideo: true, hasAudio: false, type: "com.apple.quicktime-movie")
+    source.durationSeconds = 2
+    source.averageFrameRate = 59.94
+    let request = ConversionRequest(
+        id: UUID(),
+        sourceURL: source.url,
+        targetFormatID: "animated-webp",
+        options: options,
+        destinationDirectory: URL(fileURLWithPath: "/tmp/out"),
+        collisionPolicy: .ask
+    )
+    let plan = try FFmpegCommandBuilder.plan(
+        request: request,
+        source: source,
+        temporaryOutput: URL(fileURLWithPath: "/tmp/staging/job.partial.webp"),
+        ffmpeg: URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg")
+    )
+    let filter = plan.arguments[plan.arguments.firstIndex(of: "-vf")! + 1]
+    #expect(!filter.contains("fps="))
+    #expect(plan.warnings.isEmpty)
+}
+
 @Test func presetNumbersMatchThePRD() {
     let small = WebPOptions.preset(.smallFile)
     #expect(small.framesPerSecond == 8)
@@ -144,7 +195,7 @@ struct MockAudioProvider: ConversionProvider {
 
 @Test func maxPresetTurnsEverythingUp() {
     let max = WebPOptions.preset(.maximum)
-    #expect(max.framesPerSecond == 30)
+    #expect(max.framesPerSecond == nil)
     #expect(max.maxPixelWidth == nil)
     #expect(max.quality == 100)
     #expect(max.compressionLevel == 4)

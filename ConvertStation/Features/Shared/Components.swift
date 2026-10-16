@@ -263,7 +263,7 @@ enum SizeText {
 
     static func settingsSummary(_ options: WebPOptions) -> String {
         if options.presetID == .custom {
-            return "Custom · \(options.framesPerSecond) fps · Q\(options.quality)"
+            return "Custom · \(options.frameRateLabel) · Q\(options.quality)"
         }
         return options.presetID.shortTitle
     }

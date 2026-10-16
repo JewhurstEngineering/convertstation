@@ -142,10 +142,21 @@ enum PresetID: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 enum WebPLimits {
-    static let fpsChoices = [5, 8, 10, 12, 15, 20, 24, 30]
+    static let fpsChoices = [5, 8, 10, 12, 15, 20, 24, 30, 48, 50, 60, 120]
     static let widthChoices = [320, 480, 640, 800, 1024, 1280, 1920, 2560, 3840, 7680]
     static let longClipSeconds = 30.0
     static let qualityRange = 0...100
+
+    /// How far a listed rate can sit above a measured rate and still count.
+    /// Covers 23.976, 29.97, 59.94, and 119.88.
+    static let fpsMatchSlack = 0.15
+
+    /// Rates the menu can offer without inventing frames.
+    /// A missing source rate keeps the full ladder.
+    static func fpsChoices(fitting sourceFPS: Double?) -> [Int] {
+        guard let sourceFPS, sourceFPS > 0 else { return fpsChoices }
+        return fpsChoices.filter { Double($0) <= sourceFPS + fpsMatchSlack }
+    }
 
     /// Widths the menu can offer without asking the encoder to upscale.
     /// A missing or unusable source width keeps the full ladder.
@@ -157,7 +168,8 @@ enum WebPLimits {
 
 struct WebPOptions: Codable, Equatable, Sendable {
     var presetID: PresetID
-    var framesPerSecond: Int
+    /// Nil keeps the source timing instead of resampling.
+    var framesPerSecond: Int?
     var maxPixelWidth: Int?
     var quality: Int
     var loopForever: Bool
@@ -208,10 +220,10 @@ struct WebPOptions: Codable, Equatable, Sendable {
                 allowLongClip: current.allowLongClip
             )
         case .maximum:
-            // Every control at its top value: fastest frame rate offered, full width, best quality.
+            // Full source timing, full width, best quality.
             options = WebPOptions(
                 presetID: .maximum,
-                framesPerSecond: WebPLimits.fpsChoices.max() ?? 30,
+                framesPerSecond: nil,
                 maxPixelWidth: nil,
                 quality: WebPLimits.qualityRange.upperBound,
                 loopForever: current.loopForever,
@@ -255,18 +267,37 @@ struct WebPOptions: Codable, Equatable, Sendable {
         return self
     }
 
-    func resolvedFPS(sourceFPS: Double?) -> (fps: Int, clamped: Bool) {
+    var frameRateLabel: String {
+        framesPerSecond.map { "\($0) fps" } ?? "original frame rate"
+    }
+
+    /// Nil means leave the source timestamps alone. A chosen rate above the
+    /// source is lowered to the fastest offered rate the file can support.
+    func resolvedFPS(sourceFPS: Double?) -> (fps: Int?, clamped: Bool) {
+        guard let framesPerSecond else {
+            return (nil, false)
+        }
         guard let sourceFPS, sourceFPS > 0 else {
             return (framesPerSecond, false)
         }
-        if Double(framesPerSecond) <= sourceFPS + 0.05 {
+        if Double(framesPerSecond) <= sourceFPS + WebPLimits.fpsMatchSlack {
             return (framesPerSecond, false)
         }
-        let fitted = WebPLimits.fpsChoices.last(where: { Double($0) <= sourceFPS + 0.05 })
-        if let fitted {
+        if let fitted = WebPLimits.fpsChoices(fitting: sourceFPS).last {
             return (fitted, true)
         }
         return (max(1, Int(sourceFPS.rounded(.down))), true)
+    }
+
+    /// Rate used for estimates and "did this produce an animation" checks.
+    func playbackFPS(sourceFPS: Double?) -> Double {
+        if let fps = resolvedFPS(sourceFPS: sourceFPS).fps {
+            return Double(fps)
+        }
+        if let sourceFPS, sourceFPS > 0 {
+            return sourceFPS
+        }
+        return 30
     }
 
     func effectiveInterval(sourceDuration: Double?, cappingLongClips: Bool = true) throws -> TrimInterval {
@@ -277,7 +308,7 @@ struct WebPOptions: Codable, Equatable, Sendable {
         guard WebPLimits.qualityRange.contains(quality) else {
             throw ConversionError.invalidOptions("Quality must be between 0 and 100.")
         }
-        guard framesPerSecond > 0 else {
+        if let framesPerSecond, framesPerSecond <= 0 {
             throw ConversionError.invalidOptions("Frame rate must be greater than zero.")
         }
         let end: Double

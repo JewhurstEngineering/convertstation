@@ -5,7 +5,7 @@ import Foundation
 struct SavedPreset: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var name: String
-    var framesPerSecond: Int
+    var framesPerSecond: Int?
     var maxPixelWidth: Int?
     var quality: Int
     var loopForever: Bool
@@ -38,6 +38,7 @@ struct SavedPreset: Codable, Equatable, Identifiable, Sendable {
 
     var summary: String {
         let width = maxPixelWidth.map { "\($0.formatted()) px" } ?? "original width"
-        return "\(framesPerSecond) fps · \(width) · quality \(quality)"
+        let rate = framesPerSecond.map { "\($0) fps" } ?? "original frame rate"
+        return "\(rate) · \(width) · quality \(quality)"
     }
 }

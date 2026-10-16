@@ -542,8 +542,9 @@ struct SettingsForm: View {
 
     private var fpsPicker: some View {
         Picker("Frame rate", selection: fps) {
-            ForEach(WebPLimits.fpsChoices, id: \.self) { fps in
-                Text("\(fps) fps").tag(fps)
+            Text("Original").tag(Optional<Int>.none)
+            ForEach(offeredFrameRates(selected: job.options.framesPerSecond), id: \.self) { fps in
+                Text("\(fps) fps").tag(Optional(fps))
             }
         }
         .labelsHidden()
@@ -738,7 +739,7 @@ struct SettingsForm: View {
                 title: compact ? nil : "Likely larger than the original",
                 message: compact
                     ? "Likely larger than the source."
-                    : "\(job.options.framesPerSecond) fps at quality \(job.options.quality) keeps a lot of detail."
+                    : "\(job.options.frameRateLabel) at quality \(job.options.quality) keeps a lot of detail."
             ) {
                 if let lighter, let lighterBytes {
                     Button("Use \(lighter.title) (≈ \(MediaFormat.bytes(lighterBytes)))") {
@@ -801,7 +802,17 @@ struct SettingsForm: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var fps: Binding<Int> {
+    /// Standard rates up to the source, plus a saved rate that no longer fits.
+    private func offeredFrameRates(selected: Int?) -> [Int] {
+        var choices = WebPLimits.fpsChoices(fitting: job.descriptor?.averageFrameRate)
+        if let selected, selected > 0, !choices.contains(selected) {
+            choices.append(selected)
+            choices.sort()
+        }
+        return choices
+    }
+
+    private var fps: Binding<Int?> {
         Binding(
             get: { job.options.framesPerSecond },
             set: { value in model.updateOptions(for: job.id) { $0.framesPerSecond = value } }
@@ -1007,7 +1018,7 @@ struct ResultSummary: View {
         guard job.profileID == OutputID.animatedWebP else {
             return model.target(for: job)?.displayName ?? "Output"
         }
-        let numbers = "\(job.options.framesPerSecond) fps · Q\(job.options.quality)"
+        let numbers = "\(job.options.frameRateLabel) · Q\(job.options.quality)"
         if let saved = model.savedPreset(matching: job.options) {
             return "\(saved.name) · \(numbers)"
         }
@@ -1076,7 +1087,7 @@ struct ResultSummary: View {
     }
 
     private func reason(lighter: PresetID?, lighterBytes: Int64?) -> String {
-        let cause = "\(job.options.framesPerSecond) fps at quality \(job.options.quality) keeps nearly every frame."
+        let cause = "\(job.options.frameRateLabel) at quality \(job.options.quality) keeps nearly every frame."
         guard let lighter, let lighterBytes else {
             return cause + " Try a lower quality or a shorter trim."
         }

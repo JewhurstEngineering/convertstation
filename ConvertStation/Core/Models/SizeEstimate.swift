@@ -51,8 +51,8 @@ enum SizeEstimator {
             return nil
         }
         let size = outputSize(width: width, height: height, maxPixelWidth: options.maxPixelWidth)
-        let fps = options.resolvedFPS(sourceFPS: source.averageFrameRate).fps
-        let frames = max(1, Int((interval.duration * Double(fps)).rounded()))
+        let fps = options.playbackFPS(sourceFPS: source.averageFrameRate)
+        let frames = max(1, Int((interval.duration * fps).rounded()))
         let quality = Double(min(max(options.quality, 0), 100)) / 100
         let perPixel = floorBytesPerPixel + (ceilingBytesPerPixel - floorBytesPerPixel) * quality * quality
         let bytes = Double(frames) * Double(size.width * size.height) * perPixel
