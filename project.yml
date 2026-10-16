@@ -66,8 +66,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.jewhurst.ConvertStation
         PRODUCT_NAME: ConvertStation
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: "0.1.4"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "0.1.5"
+        CURRENT_PROJECT_VERSION: "6"
         CODE_SIGN_ENTITLEMENTS: ConvertStation/ConvertStation.entitlements
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -97,8 +97,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.jewhurst.ConvertStation.InstallHelper
         PRODUCT_NAME: InstallHelper
         GENERATE_INFOPLIST_FILE: false
-        MARKETING_VERSION: "0.1.4"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "0.1.5"
+        CURRENT_PROJECT_VERSION: "6"
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
         CODE_SIGN_ENTITLEMENTS: InstallHelper/InstallHelper.entitlements
